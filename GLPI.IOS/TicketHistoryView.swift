@@ -18,6 +18,7 @@ struct TicketHistoryView: View {
     }
     
     @Environment(\.dismiss) var dismiss
+    @AppStorage("isLightMode_V2") var isLightMode = true
     @State var searchText = ""
     @State var selectedFilter: String? = nil
     @State var currentPage = 1
@@ -26,9 +27,9 @@ struct TicketHistoryView: View {
     
     private var pillWidth: CGFloat {
         let screenWidth = UIScreen.screenWidth
-        let padding: CGFloat = 32 // 16 + 16
-        let arrowButtonWidth: CGFloat = 72 + 12 // Container duplo + espaçamento
-        let spacing: CGFloat = 12 // 1 gap entre 2 itens
+        let padding: CGFloat = 32
+        let arrowButtonWidth: CGFloat = 72 + 12
+        let spacing: CGFloat = 12
         return (screenWidth - padding - arrowButtonWidth - spacing) / 2
     }
     
@@ -107,201 +108,195 @@ struct TicketHistoryView: View {
     
     var body: some View {
         ZStack {
-            GlpiColors.premiumBackground.ignoresSafeArea()
+            GlpiColors.background.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Header customizado
+                // 1. Cabeçalho Universal (Seta de Voltar)
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 45, height: 45)
-                            .glassStyle(cornerRadius: 12)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
+                    .padding(.leading, GlpiMetrics.padding + 5)
                     
                     Spacer()
-                    
-                    Text("HISTÓRICO")
-                        .font(.amiko(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    Spacer()
-                    
-                    Color.clear.frame(width: 45, height: 45)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
+                .padding(.top, 5)
+                .frame(height: GlpiMetrics.navAreaHeight)
                 
-                // Search Bar Premium
-                HStack {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.white.opacity(0.4))
-                        TextField("", text: $searchText, prompt: 
-                            Text("Pesquisar no histórico...")
-                                .foregroundColor(.white.opacity(0.3))
-                                .font(.amiko(size: 14))
-                        )
-                        .font(.amiko(size: 14))
-                        .foregroundColor(.white)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(height: 55)
-                    .glassStyle(cornerRadius: 18)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 20)
-                
-                // Horizontal Filters with Arrows
-                HStack(spacing: 12) {
-                    HStack(spacing: 12) {
-                        ForEach(currentFilters, id: \.self) { filter in
-                            FilterPill(title: filter, isSelected: selectedFilter == filter, width: pillWidth) {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    if selectedFilter == filter {
-                                        selectedFilter = nil
-                                    } else {
-                                        selectedFilter = filter
-                                    }
-                                    currentPage = 1
-                                }
-                            }
-                            .id(filter)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .transition(.asymmetric(
-                        insertion: .move(edge: .trailing).combined(with: .opacity),
-                        removal: .move(edge: .leading).combined(with: .opacity)
-                    ))
-                    .id("FilterPage_\(filterPageIndex)")
-                    
-                    HStack(spacing: 0) {
-                        Button(action: {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                                if filterPageIndex > 0 {
-                                    filterPageIndex -= 1
-                                } else {
-                                    filterPageIndex = totalFilterPages - 1
-                                }
-                            }
-                        }) {
-                            Image(systemName: "chevron.left")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.6))
-                                .frame(width: 35, height: 44)
-                        }
-                        
-                        Rectangle()
-                            .fill(Color.white.opacity(0.1))
-                            .frame(width: 1, height: 18)
-                        
-                        Button(action: {
-                            withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
-                                filterPageIndex = (filterPageIndex + 1) % totalFilterPages
-                            }
-                        }) {
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.6))
-                                .frame(width: 35, height: 44)
-                        }
-                    }
-                    .glassStyle(cornerRadius: 12)
-                }
-                .frame(height: 50)
-                .padding(.horizontal, 16)
-                .padding(.top, 15)
-                
-                // List
                 ScrollViewReader { listProxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 15) {
-                            Color.clear.frame(height: 1)
-                                .id("LIST_TOP")
+                    VStack(spacing: 0) {
+                        // Barra de Pesquisa - Agora FIXA fora do ScrollView
+                        GLPISearchHeader(
+                            searchText: $searchText,
+                            placeholder: "Pesquisar no histórico...",
+                            rightIcon: "line.3.horizontal.decrease.circle",
+                            isSystemIcon: true,
+                            isRightIconSelected: selectedFilter != nil,
+                            rightIconAction: {
+                                withAnimation { showFilterMenu.toggle() }
+                            }
+                        )
+                        .padding(.top, 10)
+                        .padding(.bottom, 10)
                         
-                            if filteredTickets.isEmpty {
-                                VStack(spacing: 15) {
-                                    Image(systemName: "clock.badge.exclamationmark")
-                                        .font(.system(size: 40))
-                                        .foregroundColor(.white.opacity(0.2))
-                                    Text("Nenhum ticket encontrado")
-                                        .font(.amiko(size: 14))
-                                        .foregroundColor(.white.opacity(0.4))
-                                }
-                                .padding(.top, 100)
-                            } else {
-                                ForEach(filteredTickets) { ticket in
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        HStack {
-                                            Text(ticket.date)
-                                                .font(.amiko(size: 10, weight: .bold))
-                                                .foregroundColor(.white.opacity(0.4))
-                                            
-                                            if ticket.isPriority {
-                                                Circle()
-                                                    .fill(Color.red)
-                                                    .frame(width: 6, height: 6)
+                        // Filtros Horizontais - Agora FIXOS fora do ScrollView
+                        HStack(spacing: 12) {
+                            HStack(spacing: 12) {
+                                ForEach(currentFilters, id: \.self) { filter in
+                                    FilterPill(title: filter, isSelected: selectedFilter == filter, width: pillWidth) {
+                                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                            if selectedFilter == filter {
+                                                selectedFilter = nil
+                                            } else {
+                                                selectedFilter = filter
                                             }
-                                            
-                                            Spacer()
+                                            currentPage = 1
                                         }
-                                        
-                                        ActivityRow(activity: (title: ticket.title, desc: ticket.desc, status: ticket.status))
                                     }
-                                    .padding(.horizontal, 18)
-                                    .frame(height: 100)
-                                    .glassStyle(cornerRadius: 22)
+                                    .id(filter)
                                 }
                             }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .id("FilterPage_\(filterPageIndex)")
                             
-                            // Pagination
                             HStack(spacing: 0) {
                                 Button(action: {
-                                    if currentPage > 1 { withAnimation { currentPage -= 1 } }
+                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                                        if filterPageIndex > 0 {
+                                            filterPageIndex -= 1
+                                        } else {
+                                            filterPageIndex = totalFilterPages - 1
+                                        }
+                                    }
                                 }) {
                                     Image(systemName: "chevron.left")
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .opacity(currentPage == 1 ? 0.2 : 1.0)
-                                        .frame(width: 50, height: 50)
+                                        .font(.system(size: 10, weight: .black))
+                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                        .frame(width: 30, height: 44)
                                 }
-                                .disabled(currentPage == 1)
-                                
-                                Spacer()
                                 
                                 Rectangle()
-                                    .fill(Color.white.opacity(0.15))
-                                    .frame(width: 1, height: 24)
-                                
-                                Spacer()
+                                    .fill(GlpiColors.dynamicText.opacity(0.1))
+                                    .frame(width: 1, height: 14)
                                 
                                 Button(action: {
-                                    if currentPage < totalPages { withAnimation { currentPage += 1 } }
+                                    withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
+                                        filterPageIndex = (filterPageIndex + 1) % totalFilterPages
+                                    }
                                 }) {
                                     Image(systemName: "chevron.right")
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
-                                        .opacity(currentPage == totalPages ? 0.2 : 1.0)
-                                        .frame(width: 50, height: 50)
+                                        .font(.system(size: 10, weight: .black))
+                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                        .frame(width: 30, height: 44)
                                 }
-                                .disabled(currentPage == totalPages)
                             }
-                            .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .glassStyle(cornerRadius: 15)
-                            .padding(.vertical, 20)
+                            .padding(.horizontal, 4)
+                            .background(Capsule().fill(GlpiColors.dynamicOffWhite))
+                            .overlay(Capsule().stroke(isLightMode ? Color.black.opacity(0.05) : Color.white.opacity(0.15), lineWidth: 0.5))
+                        }
+                        .frame(height: 50)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 15)
+                        
+                        ScrollView(showsIndicators: false) {
+                            VStack(alignment: .leading, spacing: 25) {
+                            
+                            // Lista de Histórico
+                            VStack(spacing: 15) {
+                                Color.clear.frame(height: 1).id("LIST_TOP")
+                                
+                                if filteredTickets.isEmpty {
+                                    VStack(spacing: 15) {
+                                        Image(systemName: "clock.badge.exclamationmark")
+                                            .font(.system(size: 40))
+                                            .foregroundColor(GlpiColors.dynamicText.opacity(0.2))
+                                        Text("Nenhum ticket encontrado")
+                                            .font(.amiko(size: 14))
+                                            .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                    }
+                                    .padding(.top, 100)
+                                } else {
+                                    ForEach(filteredTickets) { ticket in
+                                        VStack(alignment: .leading, spacing: 10) {
+                                            HStack {
+                                                Text(ticket.date.uppercased())
+                                                    .font(.amiko(size: 10, weight: .bold))
+                                                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                                
+                                                if ticket.isPriority {
+                                                    Circle().fill(GlpiColors.universalBlue).frame(width: 6, height: 6)
+                                                }
+                                                Spacer()
+                                            }
+                                            
+                                            ActivityRow(activity: (title: ticket.title, desc: ticket.desc, status: ticket.status))
+                                        }
+                                        .padding(18)
+                                        .background(GlpiColors.dynamicOffWhite)
+                                        .cornerRadius(22)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 22)
+                                                .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
+                                        )
+                                        .padding(.horizontal, 16)
+                                    }
+                                }
+                                
+                                // Paginação
+                                HStack(spacing: 0) {
+                                    Button(action: {
+                                        if currentPage > 1 { withAnimation { currentPage -= 1 } }
+                                    }) {
+                                        Image(systemName: "chevron.left")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(GlpiColors.universalBlue)
+                                            .opacity(currentPage == 1 ? 0.2 : 1.0)
+                                            .frame(width: 50, height: 50)
+                                    }
+                                    .disabled(currentPage == 1)
+                                    
+                                    Spacer()
+                                    
+                                    Rectangle()
+                                        .fill(GlpiColors.dynamicText.opacity(0.05))
+                                        .frame(width: 1, height: 24)
+                                    
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        if currentPage < totalPages { withAnimation { currentPage += 1 } }
+                                    }) {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(GlpiColors.universalBlue)
+                                            .opacity(currentPage == totalPages ? 0.2 : 1.0)
+                                            .frame(width: 50, height: 50)
+                                    }
+                                    .disabled(currentPage == totalPages)
+                                }
+                                .padding(.horizontal, 10)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .background(GlpiColors.dynamicOffWhite)
+                                .cornerRadius(15)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 15)
+                                        .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
+                                )
+                                .padding(.horizontal, 16)
+                                .padding(.top, 20)
+                            }
                             
                             Spacer(minLength: 120)
                         }
-                        .padding(16)
-                        .padding(.top, -5)
+                        .padding(.top, 10)
                     }
-                    .onChange(of: currentPage) { oldValue, newValue in
-                        withAnimation(.spring()) {
-                            listProxy.scrollTo("LIST_TOP", anchor: .top)
+                        .onChange(of: currentPage) { oldValue, newValue in
+                            withAnimation(.spring()) {
+                                listProxy.scrollTo("LIST_TOP", anchor: .top)
+                            }
                         }
                     }
                 }
@@ -322,13 +317,6 @@ struct TicketHistoryView: View {
                 .onTapGesture { withAnimation(.spring()) { showFilterMenu = false } }
             
             VStack(alignment: .leading, spacing: 0) {
-                Text("FILTRAR POR")
-                    .font(.amiko(size: 13, weight: .bold))
-                    .foregroundColor(.white.opacity(0.4))
-                    .padding(.horizontal, 16)
-                    .padding(.top, 25)
-                    .padding(.bottom, 12)
-                
                 ForEach(filters, id: \.self) { filter in
                     filterMenuItem(title: filter, isSelected: selectedFilter == filter) {
                         if selectedFilter == filter {
@@ -340,16 +328,21 @@ struct TicketHistoryView: View {
                     }
                     
                     if filter != filters.last {
-                        Divider().background(Color.white.opacity(0.1)).padding(.horizontal, 16)
+                        Divider().background(GlpiColors.dynamicText.opacity(0.05)).padding(.horizontal, 16)
                     }
                 }
                 
                 Spacer().frame(height: 15)
             }
             .frame(maxWidth: .infinity)
-            .glassStyle(cornerRadius: 30)
+            .background(GlpiColors.dynamicOffWhite)
+            .cornerRadius(30)
+            .overlay(
+                RoundedRectangle(cornerRadius: 30)
+                    .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
+            )
             .padding(.horizontal, 16)
-            .shadow(color: .blue.opacity(0.2), radius: 40)
+            .shadow(color: GlpiColors.universalBlue.opacity(0.2), radius: 40)
             .transition(.scale(scale: 0.9).combined(with: .opacity))
         }
         .zIndex(10)
@@ -360,9 +353,9 @@ struct TicketHistoryView: View {
             HStack {
                 Text(title).font(.amiko(size: 14, weight: isSelected ? .bold : .regular))
                 Spacer()
-                if isSelected { Image(systemName: "checkmark").foregroundColor(.blue) }
+                if isSelected { Image(systemName: "checkmark").foregroundColor(GlpiColors.universalBlue) }
             }
-            .foregroundColor(.white).padding(16)
+            .foregroundColor(GlpiColors.dynamicText).padding(16)
         }
     }
 }

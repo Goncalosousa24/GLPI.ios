@@ -9,6 +9,7 @@ import SwiftUI
 
 struct NotificationsSettingsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("isLightMode_V2") var isLightMode = true
     
     @State private var allowNotifications = true
     @State private var notifyNewTickets = true
@@ -17,35 +18,26 @@ struct NotificationsSettingsView: View {
     
     var body: some View {
         ZStack {
-            GlpiColors.premiumBackground.ignoresSafeArea()
+            GlpiColors.background.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // MARK: - Header
+                // 1. Cabeçalho Universal (Seta de Voltar)
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 45, height: 45)
-                            .glassStyle(cornerRadius: 12)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
+                    .padding(.leading, GlpiMetrics.padding + 5)
                     
                     Spacer()
-                    
-                    Text("NOTIFICAÇÕES")
-                        .font(.amiko(size: 18, weight: .bold))
-                        .foregroundColor(.white)
-                    
-                    Spacer()
-                    
-                    Color.clear.frame(width: 45, height: 45)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
+                .padding(.top, 5)
+                .frame(height: GlpiMetrics.navAreaHeight)
                 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 25) {
-                        // MARK: - Main Toggle
+                    VStack(alignment: .leading, spacing: 30) {
+                        // MARK: - Interruptor Principal
                         VStack(spacing: 0) {
                             NotificationToggleRow(
                                 title: "Permitir Notificações",
@@ -55,17 +47,21 @@ struct NotificationsSettingsView: View {
                             )
                         }
                         .padding(20)
-                        .glassStyle(cornerRadius: 25)
+                        .background(GlpiColors.dynamicOffWhite)
+                        .cornerRadius(25)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 25)
+                                .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
+                        )
                         .padding(.horizontal, 16)
-                        .padding(.top, 20)
                         
-                        // MARK: - Specific Options
+                        // MARK: - Opções Específicas
                         if allowNotifications {
-                            VStack(alignment: .leading, spacing: 20) {
+                            VStack(alignment: .leading, spacing: 15) {
                                 Text("NOTIFICAR-ME SOBRE")
-                                    .font(.amiko(size: 12, weight: .bold))
-                                    .foregroundColor(.white.opacity(0.4))
-                                    .padding(.leading, 5)
+                                    .font(.amiko(size: 11, weight: .bold))
+                                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                    .padding(.leading, 21)
                                 
                                 VStack(spacing: 0) {
                                     NotificationToggleRow(
@@ -76,7 +72,7 @@ struct NotificationsSettingsView: View {
                                     )
                                     
                                     Divider()
-                                        .background(Color.white.opacity(0.1))
+                                        .background(GlpiColors.dynamicText.opacity(0.05))
                                         .padding(.vertical, 10)
                                     
                                     NotificationToggleRow(
@@ -87,7 +83,7 @@ struct NotificationsSettingsView: View {
                                     )
                                     
                                     Divider()
-                                        .background(Color.white.opacity(0.1))
+                                        .background(GlpiColors.dynamicText.opacity(0.05))
                                         .padding(.vertical, 10)
                                     
                                     NotificationToggleRow(
@@ -98,9 +94,14 @@ struct NotificationsSettingsView: View {
                                     )
                                 }
                                 .padding(20)
-                                .glassStyle(cornerRadius: 25)
+                                .background(GlpiColors.dynamicOffWhite)
+                                .cornerRadius(25)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 25)
+                                        .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
+                                )
+                                .padding(.horizontal, 16)
                             }
-                            .padding(.horizontal, 16)
                             .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                         
@@ -124,27 +125,27 @@ struct NotificationToggleRow: View {
         HStack(spacing: 15) {
             ZStack {
                 Circle()
-                    .fill(Color.white.opacity(0.05))
+                    .fill(GlpiColors.dynamicText.opacity(0.03))
                     .frame(width: 40, height: 40)
                 Image(systemName: icon)
-                    .foregroundColor(isOn ? .blue : .white.opacity(0.3))
+                    .foregroundColor(isOn ? GlpiColors.universalBlue : GlpiColors.dynamicText.opacity(0.2))
                     .font(.system(size: 18))
             }
             
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.amiko(size: 16, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(GlpiColors.dynamicText)
                 Text(subtitle)
                     .font(.amiko(size: 12))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
             }
             
             Spacer()
             
             Toggle("", isOn: $isOn)
                 .labelsHidden()
-                .tint(.blue)
+                .tint(GlpiColors.universalBlue)
         }
         .padding(.vertical, 5)
     }

@@ -16,13 +16,21 @@ struct TicketListView: View {
     let isDeleteMode: Bool
     let isPersonalView: Bool
     
-    init(title: String, statusFilter: TicketStatus? = nil, priorityFilter: TicketPriority? = nil, isEditMode: Bool = false, isDeleteMode: Bool = false, isPersonalView: Bool = false) {
+    enum SelectionType {
+        case delete
+        case recover
+    }
+    
+    @State private var selectionType: SelectionType? = nil
+    
+    init(title: String, statusFilter: TicketStatus? = nil, priorityFilter: TicketPriority? = nil, isEditMode: Bool = false, isDeleteMode: Bool = false, isPersonalView: Bool = false, initialPage: Int = 1) {
         self.title = title
         self.statusFilter = statusFilter
         self.priorityFilter = priorityFilter
         self.isEditMode = isEditMode
         self.isDeleteMode = isDeleteMode
         self.isPersonalView = isPersonalView
+        self._currentPage = State(initialValue: initialPage)
     }
     
     @Environment(\.dismiss) private var dismiss
@@ -31,11 +39,17 @@ struct TicketListView: View {
     @State private var selectedScope: String = "Geral"
     @State private var showFilterMenu = false
     @State private var selectedTicketForEdit: GLPITicket?
+    @State private var selectedTicketForDetail: GLPITicket?
     @State private var selectedTicketForReply: GLPITicket?
     @State private var longPressedTicket: GLPITicket?
     @State private var longPressedTicketY: CGFloat = 0
     @State private var selectedTickets = Set<String>()
+    @State private var singleActionTicketId: String? = nil
     @State private var showDeleteAlert = false
+    @State private var showRecoverAlert = false
+    @State private var showResolveAlert = false
+    @State private var expandedTicketId: String? = nil
+    @State private var showSelectionIcons = false
     
     @State private var tickets: [GLPITicket] = []
     @State private var isLoading = false
@@ -45,7 +59,9 @@ struct TicketListView: View {
     // Paginação
     @State private var currentPage = 1
     @State private var totalCount = 0
-    private let ticketsPerPage = 5
+    private var ticketsPerPage: Int {
+        title == "ATUALIZAÇÕES" ? 3 : 5
+    }
     
     @State private var currentY: CGFloat = 0
     
@@ -66,19 +82,38 @@ struct TicketListView: View {
         var currentStatusFilter: TicketStatus? = statusFilter
         let userId = isPersonalView ? PreferenceManager.shared.userId : nil
         
-        if title == "RESOLVIDOS" || title == "PRIORITÁRIOS" {
+        if title == "RESOLVIDOS" || title == "PRIORITÁRIOS" || title == "ATUALIZAÇÕES" {
             Task {
                 do {
                     let result: ([GLPITicket], Int)
                     if title == "RESOLVIDOS" {
                         result = try await GLPIClient.shared.getTicketsResolvidos(userId: userId, range: range)
-                    } else {
+                    } else if title == "PRIORITÁRIOS" {
                         result = try await GLPIClient.shared.getTicketsPrioritarios(userId: userId, range: range)
+                    } else {
+                        // Para ATUALIZAÇÕES, usamos a mesma lógica de busca recente mas com paginação
+                        let response = try await GLPIClient.shared.searchTickets(range: range, sort: "19", order: "DESC")
+                        result = (GLPIService.shared.mapToTickets(response.data ?? []), response.totalInt)
                     }
                     
                     await MainActor.run {
                         self.tickets = result.0
                         self.totalCount = result.1
+                        
+                        // ATUALIZAR O WIDGET COM O TICKET MAIS RECENTE
+                        if title == "ATUALIZAÇÕES", let first = result.0.first {
+                            let formatter = DateFormatter()
+                            formatter.dateFormat = "HH:mm"
+                            let timeStr = formatter.string(from: first.date)
+                            
+                            PreferenceManager.shared.updateWidgetData(
+                                title: first.name,
+                                desc: first.description,
+                                id: first.id,
+                                time: timeStr
+                            )
+                        }
+                        
                         self.resolveNames()
                         self.isLoading = false
                     }
@@ -175,141 +210,159 @@ struct TicketListView: View {
         }
     }
     
+    private func ticketCard(ticket: GLPITicket, isPaged: Bool = false) -> some View {
+        let isSelected = selectedTickets.contains(ticket.id)
+        let isExpanded = expandedTicketId == ticket.id
+        let selColor: Color = selectionType == .delete ? .red : GlpiColors.universalBlue
+        let isDelMode = (isDeleteMode || selectionType != nil) && showSelectionIcons
+        
+        return TicketRowView(
+            ticket: ticket,
+            isSelected: isSelected,
+            selectionColor: selColor,
+            isExpanded: isExpanded,
+            isDeleteMode: isDelMode,
+            onLongPress: { yPos in
+                if !isPaged {
+                    longPressedTicketY = yPos
+                    withAnimation(.spring()) {
+                        longPressedTicket = ticket
+                    }
+                }
+            },
+            onSelect: {
+                if showSelectionIcons {
+                    if isSelected {
+                        selectedTickets.remove(ticket.id)
+                    } else {
+                        selectedTickets.insert(ticket.id)
+                    }
+                    
+                    if selectedTickets.isEmpty {
+                        withAnimation { 
+                            showSelectionIcons = false
+                            selectionType = nil
+                        }
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                        expandedTicketId = isExpanded ? nil : ticket.id
+                    }
+                }
+            },
+            currentY: $currentY
+        )
+    }
+    
     var body: some View {
         ZStack {
-            GlpiColors.premiumBackground.ignoresSafeArea()
+            GlpiColors.background.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Header
+                // 1. Navegação Superior (Seta de voltar - Universal)
                 HStack {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 45, height: 45)
-                            .glassStyle(cornerRadius: 12)
+                            .font(.system(size: 22, weight: .semibold))
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
-                    Spacer()
-                    Text(title)
-                        .font(.inconsolata(size: 22, weight: .bold))
-                        .foregroundColor(.white)
-                    Spacer()
-                    Color.clear.frame(width: 44, height: 44)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
-                
-                // Search & Tools
-                HStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.white.opacity(0.4))
-                        TextField("", text: $searchText, prompt: Text("Pesquisar...").foregroundColor(.white.opacity(0.3)))
-                            .foregroundColor(.white)
-                            .font(.amiko(size: 16))
-                    }
-                    .padding()
-                    .glassStyle(cornerRadius: 15)
+                    .padding(.leading, GlpiMetrics.padding + 5)
                     
-                    Button(action: { withAnimation { showFilterMenu.toggle() } }) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(selectedScope == "Geral" ? .white : .blue)
-                            .frame(width: 54, height: 54)
-                            .glassStyle(cornerRadius: 15, isSelection: selectedScope != "Geral")
-                    }
+                    Spacer()
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 25)
+                .padding(.top, 5)
+                .frame(height: GlpiMetrics.navAreaHeight - 5) // Ajuste para totalizar 60px
                 
-                ScrollView(showsIndicators: false) {
-                    ScrollViewReader { proxy in
-                        VStack(spacing: 16) {
-                            Color.clear.frame(height: 1).id("LIST_TOP")
-                            
-                            if tickets.isEmpty && !isLoading {
-                                VStack {
-                                    Spacer(minLength: 250)
-                                    Text("O servidor não devolveu nenhum ticket para esta categoria.")
-                                        .font(.amiko(size: 16))
-                                        .foregroundColor(.white.opacity(0.6))
-                                        .multilineTextAlignment(.center)
-                                        .padding(.horizontal, 30)
-                                    Spacer()
-                                }
-                            } else {
-                                ForEach(filteredTickets) { ticket in
-                                    TicketRowView(
-                                        ticket: ticket,
-                                        isSelected: selectedTickets.contains(ticket.id),
-                                        isDeleteMode: isDeleteMode,
-                                        onLongPress: { yPos in
-                                            longPressedTicketY = yPos
-                                            withAnimation(.spring()) {
-                                                longPressedTicket = ticket
-                                            }
-                                        },
-                                        onSelect: {
-                                            if isDeleteMode {
-                                                if selectedTickets.contains(ticket.id) {
-                                                    selectedTickets.remove(ticket.id)
-                                                } else {
-                                                    selectedTickets.insert(ticket.id)
+                // 2. Barra de Pesquisa (Posicionamento Intocável)
+                GLPISearchHeader(
+                    searchText: $searchText,
+                    placeholder: isDeleteMode ? "Pesquisar na reciclagem..." : "Pesquisar em \(title.lowercased())...",
+                    rightIcon: title == "ATUALIZAÇÕES" ? nil : "arrow.up.arrow.down",
+                    isSystemIcon: true,
+                    isRightIconSelected: isAscending,
+                    rightIconAction: {
+                        if title != "ATUALIZAÇÕES" {
+                            withAnimation { isAscending.toggle() }
+                        }
+                    }
+                )
+                .padding(.top, 0)
+                .padding(.bottom, 15)
+                
+                if title == "ATUALIZAÇÕES" {
+                    // MODO PÁGINA (Paginado de 3 em 3)
+                    ZStack {
+                        if isLoading && tickets.isEmpty {
+                            VStack {
+                                Spacer()
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: GlpiColors.universalBlue))
+                                    .scaleEffect(1.5)
+                                Spacer()
+                            }
+                        } else {
+                            VStack(spacing: 0) {
+                                TabView(selection: $currentPage) {
+                                    ForEach(1...max(1, totalPages), id: \.self) { pageNum in
+                                        ScrollView(showsIndicators: false) {
+                                            VStack(spacing: 16) {
+                                                ForEach(filteredTickets) { ticket in
+                                                    ticketCard(ticket: ticket, isPaged: true)
                                                 }
-                                            } else {
-                                                selectedTicketForEdit = ticket
                                             }
-                                        },
-                                        currentY: $currentY
-                                    )
-                                }
-                                
-                                // PAGINAÇÃO (ESTILO ORIGINAL)
-                                if totalPages > 1 {
-                                    HStack(spacing: 0) {
-                                        Button(action: {
-                                            if currentPage > 1 { withAnimation { currentPage -= 1 } }
-                                        }) {
-                                            Image(systemName: "chevron.left")
-                                                .font(.system(size: 16, weight: .bold))
-                                                .foregroundColor(.white)
-                                                .opacity(currentPage == 1 ? 0.2 : 1.0)
-                                                .frame(width: 50, height: 50)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 5)
                                         }
-                                        .disabled(currentPage == 1)
-                                        
-                                        Spacer()
-                                        
-                                        Rectangle()
-                                            .fill(Color.white.opacity(0.15))
-                                            .frame(width: 1, height: 24)
-                                        
-                                        Spacer()
-                                        
-                                        Button(action: {
-                                            if currentPage < totalPages { withAnimation { currentPage += 1 } }
-                                        }) {
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 16, weight: .bold))
-                                                .foregroundColor(.white)
-                                                .opacity(currentPage == totalPages ? 0.2 : 1.0)
-                                                .frame(width: 50, height: 50)
-                                        }
-                                        .disabled(currentPage == totalPages)
+                                        .tag(pageNum)
                                     }
-                                    .padding(.horizontal, 10)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 50)
-                                    .glassStyle(cornerRadius: 15)
-                                    .padding(.top, 10)
                                 }
+                                .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                                .frame(height: 580)
+                                
+                                // Barra de Navegação Universal para Páginas
+                                paginationBar()
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 10)
+                                    .padding(.bottom, 20)
                             }
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 120)
-                        .onChange(of: currentPage) { oldValue, newValue in
-                            withAnimation { proxy.scrollTo("LIST_TOP", anchor: .top) }
-                            loadTickets()
+                    }
+                    .onChange(of: currentPage) { _ in
+                        loadTickets()
+                    }
+                } else {
+                    // MODO LISTA NORMAL (Scroll Contínuo com Paginação no fundo)
+                    ScrollView(showsIndicators: false) {
+                        ScrollViewReader { proxy in
+                            VStack(spacing: 16) {
+                                Color.clear.frame(height: 1).id("LIST_TOP")
+                                
+                                if tickets.isEmpty && !isLoading {
+                                    VStack {
+                                        Spacer(minLength: 250)
+                                        Text("O servidor não devolveu nenhum ticket para esta categoria.")
+                                            .font(.amiko(size: 16))
+                                            .foregroundColor(.white.opacity(0.6))
+                                            .multilineTextAlignment(.center)
+                                            .padding(.horizontal, 30)
+                                        Spacer()
+                                    }
+                                } else {
+                                    ForEach(filteredTickets) { ticket in
+                                        ticketCard(ticket: ticket)
+                                    }
+                                    
+                                    // PAGINAÇÃO (ESTILO UNIVERSAL)
+                                    paginationBar()
+                                        .padding(.top, 10)
+                                }
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.bottom, 120)
+                            .onChange(of: currentPage) { _, _ in
+                                withAnimation { proxy.scrollTo("LIST_TOP", anchor: .top) }
+                                loadTickets()
+                            }
                         }
                     }
                 }
@@ -330,6 +383,7 @@ struct TicketListView: View {
             if let ticket = longPressedTicket {
                 TicketQuickActionsOverlay(
                     ticket: ticket,
+                    isDeleteMode: isDeleteMode,
                     onDismiss: { withAnimation(.spring()) { longPressedTicket = nil } },
                     onEdit: {
                         selectedTicketForEdit = ticket
@@ -340,61 +394,239 @@ struct TicketListView: View {
                         longPressedTicket = nil
                     },
                     onDelete: {
+                        singleActionTicketId = ticket.id
                         showDeleteAlert = true
                     },
-                    isReciclagem: selectedScope == "Reciclagem"
+                    onResolve: {
+                        showResolveAlert = true
+                    },
+                    onPermanentDelete: {
+                        withAnimation {
+                            expandedTicketId = nil
+                            selectionType = .delete
+                            selectedTickets = [ticket.id]
+                            showSelectionIcons = true
+                        }
+                        longPressedTicket = nil
+                    },
+                    onRecover: {
+                        withAnimation {
+                            expandedTicketId = nil
+                            selectionType = .recover
+                            selectedTickets = [ticket.id]
+                            showSelectionIcons = true
+                        }
+                        longPressedTicket = nil
+                    }
                 )
             }
             
-            if isDeleteMode && !selectedTickets.isEmpty {
+            if !selectedTickets.isEmpty {
                 VStack {
                     Spacer()
-                    Button(action: { showDeleteAlert = true }) {
-                        Text(selectedScope == "Reciclagem" ? "ELIMINAR PERMANENTEMENTE (\(selectedTickets.count))" : "ENVIAR PARA A RECICLAGEM (\(selectedTickets.count))")
-                            .font(.amiko(size: 14, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 54)
-                            .background(
-                                Capsule()
-                                    .fill(Color.red)
-                                    .shadow(color: .red.opacity(0.4), radius: 15)
-                            )
-                            .padding(.horizontal, 16)
+                    HStack(spacing: 12) {
+                        if selectionType == .recover {
+                            // Botão Recuperar (AZUL UNIVERSAL)
+                            Button(action: {
+                                showRecoverAlert = true
+                            }) {
+                                Text("RECUPERAR SELECIONADOS")
+                                    .font(.amiko(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 54)
+                                    .background(
+                                        Capsule()
+                                            .fill(GlpiColors.universalBlue)
+                                            .shadow(color: GlpiColors.universalBlue.opacity(0.4), radius: 15)
+                                    )
+                            }
+                        } else if selectionType == .delete {
+                            // Botão Eliminar (VERMELHO)
+                            Button(action: { showDeleteAlert = true }) {
+                                Text(selectedScope == "Reciclagem" ? "ELIMINAR SELECIONADOS" : "ENVIAR SELECIONADOS PARA A RECICLAGEM")
+                                    .font(.amiko(size: 14, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 54)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.red)
+                                            .shadow(color: .red.opacity(0.4), radius: 15)
+                                    )
+                            }
+                        }
                     }
-                    .padding(.bottom, 120)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 40)
                 }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        .alert("CONFIRMAÇÃO", isPresented: $showRecoverAlert) {
+            Button("CANCELAR", role: .cancel) { 
+                singleActionTicketId = nil
+            }
+            Button("RECUPERAR", role: .none) {
+                withAnimation {
+                    let idsToRecover = singleActionTicketId != nil ? [singleActionTicketId!] : Array(selectedTickets)
+                    
+                    for id in idsToRecover {
+                        if let index = tickets.firstIndex(where: { $0.id == id }) {
+                            let original = tickets[index]
+                            let recovered = GLPITicket(
+                                id: original.id,
+                                name: original.name,
+                                requester: original.requester,
+                                author: original.author,
+                                assignedTo: original.assignedTo,
+                                description: original.description,
+                                date: original.date,
+                                priority: original.priority,
+                                status: .new,
+                                isMine: original.isMine,
+                                isAssignedToMe: original.isAssignedToMe,
+                                responses: original.responses
+                            )
+                            tickets.remove(at: index)
+                        }
+                    }
+                    
+                    if singleActionTicketId == nil {
+                        selectedTickets.removeAll()
+                        showSelectionIcons = false
+                        selectionType = nil
+                    }
+                    singleActionTicketId = nil
+                    longPressedTicket = nil
+                }
+            }
+        } message: {
+            Text("Tem a certeza que pretende recuperar estes tickets?")
+        }
+        
         .alert("CONFIRMAÇÃO", isPresented: $showDeleteAlert) {
-            Button("CANCELAR", role: .cancel) { longPressedTicket = nil }
-            Button(selectedScope == "Reciclagem" ? "ELIMINAR PARA SEMPRE" : "ELIMINAR", role: .destructive) {
+            Button("CANCELAR", role: .cancel) { 
+                singleActionTicketId = nil
+                if selectedTickets.isEmpty {
+                    showSelectionIcons = false
+                }
+            }
+            Button(selectedScope == "Reciclagem" ? "ELIMINAR" : "ELIMINAR", role: .destructive) {
+                let idsToDelete = singleActionTicketId != nil ? [singleActionTicketId!] : Array(selectedTickets)
+                
                 if selectedScope == "Reciclagem" {
-                    tickets.removeAll { selectedTickets.contains($0.id) }
+                    tickets.removeAll { idsToDelete.contains($0.id) }
                 } else {
-                    for id in selectedTickets {
+                    for id in idsToDelete {
                         if let index = tickets.firstIndex(where: { t in t.id == id }) {
                             let original = tickets[index]
-                            tickets[index] = GLPITicket(id: original.id, name: original.name, requester: original.requester, assignedTo: original.assignedTo, description: original.description, date: original.date, priority: original.priority, status: .deleted, isMine: original.isMine, isAssignedToMe: original.isAssignedToMe)
+                            tickets[index] = GLPITicket(id: original.id, name: original.name, requester: original.requester, author: original.author, assignedTo: original.assignedTo, description: original.description, date: original.date, priority: original.priority, status: .deleted, isMine: original.isMine, isAssignedToMe: original.isAssignedToMe)
                         }
                     }
                 }
-                selectedTickets.removeAll()
+                
+                if singleActionTicketId == nil {
+                    selectedTickets.removeAll()
+                    showSelectionIcons = false
+                    selectionType = nil
+                }
+                singleActionTicketId = nil
                 longPressedTicket = nil
             }
         } message: {
             Text(selectedScope == "Reciclagem" ? "Tem a certeza que quer eliminar permanentemente estes tickets?" : "Tem a certeza que quer enviar para a reciclagem?")
         }
-        .sheet(item: $selectedTicketForEdit) { ticket in
-            TicketEditView(ticket: ticket)
+        .alert("RESOLVER TICKET", isPresented: $showResolveAlert) {
+            Button("CANCELAR", role: .cancel) { }
+            Button("CONFIRMAR", role: .none) {
+                if let ticketId = longPressedTicket?.id {
+                    if let index = tickets.firstIndex(where: { $0.id == ticketId }) {
+                        let original = tickets[index]
+                        tickets[index] = GLPITicket(
+                            id: original.id,
+                            name: original.name,
+                            requester: original.requester,
+                            author: original.author,
+                            assignedTo: original.assignedTo,
+                            description: original.description,
+                            date: original.date,
+                            priority: original.priority,
+                            status: .resolved,
+                            isMine: original.isMine,
+                            isAssignedToMe: original.isAssignedToMe,
+                            responses: original.responses
+                        )
+                    }
+                }
+                longPressedTicket = nil
+            }
+        } message: {
+            Text("Tem a certeza que pretende marcar este ticket como resolvido?")
         }
         .sheet(item: $selectedTicketForReply) { ticket in
             TicketReplyView(ticket: ticket)
         }
+        .sheet(item: $selectedTicketForDetail) { ticket in
+            TicketDetailView(ticket: ticket)
+        }
+        .sheet(item: $selectedTicketForEdit) { ticket in
+            TicketEditView(ticket: ticket)
+        }
         .navigationBarHidden(true)
         .onAppear {
+            if isDeleteMode {
+                selectedScope = "Reciclagem"
+            }
             loadTickets()
+        }
+    }
+    
+    // MARK: - Componentes Auxiliares
+    
+    private func paginationBar() -> some View {
+        Group {
+            if totalPages > 1 {
+                HStack(spacing: 0) {
+                    Button(action: {
+                        if currentPage > 1 {
+                            withAnimation(.spring()) { currentPage -= 1 }
+                        }
+                    }) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(GlpiColors.universalBlue)
+                            .opacity(currentPage == 1 ? 0.2 : 1.0)
+                            .frame(width: 50, height: 50)
+                    }
+                    .disabled(currentPage == 1)
+                    
+                    Spacer()
+                    
+                    Rectangle()
+                        .fill(Color.white.opacity(0.15))
+                        .frame(width: 1, height: 24)
+                    
+                    Spacer()
+                    
+                    Button(action: {
+                        if currentPage < totalPages {
+                            withAnimation(.spring()) { currentPage += 1 }
+                        }
+                    }) {
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(GlpiColors.universalBlue)
+                            .opacity(currentPage == totalPages ? 0.2 : 1.0)
+                            .frame(width: 50, height: 50)
+                    }
+                    .disabled(currentPage == totalPages)
+                }
+                .padding(.horizontal, 10)
+                .frame(maxWidth: .infinity)
+                .frame(height: 50)
+                .glassStyle(cornerRadius: 15)
+            }
         }
     }
 }

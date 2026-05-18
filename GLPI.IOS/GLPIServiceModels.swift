@@ -46,6 +46,12 @@ struct TicketListResponse: Codable, Sendable {
         case data, totalcount, count
     }
     
+    init(totalcount: Int, count: Int, data: [[String: AnyCodable]]? = nil) {
+        self.totalcount = AnyCodable(totalcount)
+        self.count = AnyCodable(count)
+        self.data = data
+    }
+    
     init(from decoder: Decoder) throws {
         let container = try? decoder.container(keyedBy: CodingKeys.self)
         if let container = container {

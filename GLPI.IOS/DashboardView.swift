@@ -20,6 +20,18 @@ struct DashboardView: View {
     @State private var selectedChartType: DashboardChartType = .performance
     let pageDuration: Double = 5.0
     
+    @State private var currentActivityPage = 0
+    struct ListConfig: Identifiable {
+        let id = UUID()
+        let title: String
+        let status: TicketStatus?
+        let isDeleteMode: Bool
+    }
+    
+    @State private var listConfig: ListConfig? = nil
+    @State private var showStatistics = false
+    @State private var showActivities = false
+    
     let timer = Timer.publish(every: 0.1, on: .main, in: .common).autoconnect()
     
     private var selectedStat: PerformanceStat {
@@ -28,154 +40,145 @@ struct DashboardView: View {
     
     var body: some View {
         ZStack {
-            GlpiColors.premiumBackground.ignoresSafeArea()
-        
+            GlpiColors.background.ignoresSafeArea()
             VStack(spacing: 0) {
-                // Header Padding
-                
-                // Search + Profile
-                HStack(spacing: 12) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.white.opacity(0.4))
-                        TextField("", text: $searchText, prompt: Text("Pesquisar...").foregroundColor(.white.opacity(0.3)))
-                            .foregroundColor(.white)
-                            .font(.amiko(size: 16))
-                    }
-                    .padding()
-                    .glassStyle(cornerRadius: 15)
-                    
-                    Button(action: {
+                // Cabeçalho Universal (De volta à posição FIXA)
+                GLPISearchHeader(
+                    searchText: $searchText,
+                    placeholder: "Pesquisar tickets...",
+                    rightIcon: dashViewModel.isPersonalView ? "pessoa" : "pessoa2",
+                    isRightIconSelected: dashViewModel.isPersonalView,
+                    rightIconAction: {
                         withAnimation(.spring()) {
                             dashViewModel.isPersonalView.toggle()
                         }
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    }) {
-                        Image(dashViewModel.isPersonalView ? "pessoa2" : "pessoa")
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .frame(width: 22, height: 22)
-                            .foregroundColor(.white)
-                            .padding(14)
-                            .glassStyle(cornerRadius: 15, isSelection: dashViewModel.isPersonalView)
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
+                )
+                .padding(.top, GlpiMetrics.topPadding)
                 .padding(.bottom, 5)
-                
+
+
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 20) {
-                        // 1. STATS
-                        VStack(spacing: 16) {
-                            HStack(spacing: 15) {
-                                DashboardStatCard(title: "NOVOS", value: dashViewModel.newTicketsCount, color: .blue, trigger: dashViewModel.lastUpdateTrigger)
-                                DashboardStatCard(title: "ATRIBUÍDOS", value: dashViewModel.assignedTicketsCount, color: .orange, trigger: dashViewModel.lastUpdateTrigger)
-                                DashboardStatCard(title: "RESOLVIDOS", value: dashViewModel.resolvedTicketsCount, color: .green, trigger: dashViewModel.lastUpdateTrigger)
-                            }
-                        }
-                        .padding(.horizontal, 16)
+                        ScrollOffsetTracker()
                         
-                        // 2. UPDATES
-                        VStack(alignment: .leading, spacing: 15) {
-                            HStack {
-                                Spacer()
-                                Text("ÚLTIMAS ATUALIZAÇÕES")
-                                    .font(.inconsolata(size: 16, weight: .bold))
-                                    .foregroundColor(.white.opacity(0.8))
-                                Spacer()
-                                Text("\(activityIndex + 1)/2")
-                                    .font(.amiko(size: 12))
-                                    .foregroundColor(.white.opacity(0.5))
-                            }
-                            
-                            VStack(spacing: 12) {
-                                let start = activityIndex * 3
-                                let end = min(start + 3, dashViewModel.activities.count)
+                        VStack(spacing: 20) {
+                            // 1. STATS (Interativos)
+                            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 15) {
+                                DashboardStatCard(title: "NOVOS", value: dashViewModel.newTicketsCount, color: .blue, trigger: dashViewModel.lastUpdateTrigger) {
+                                    listConfig = ListConfig(title: "NOVOS", status: .new, isDeleteMode: false)
+                                }
                                 
-                                if start < end {
-                                    ForEach(start..<end, id: \.self) { index in
-                                        ActivityRow(activity: dashViewModel.activities[index])
-                                    }
-                                } else if dashViewModel.activities.isEmpty && !dashViewModel.isLoading {
-                                    Text("Sem atividades recentes")
-                                        .font(.amiko(size: 14))
-                                        .foregroundColor(.white.opacity(0.3))
-                                        .frame(maxWidth: .infinity, alignment: .center)
-                                        .padding(.vertical, 20)
+                                DashboardStatCard(title: "EM PROGRESSO", value: dashViewModel.inProgressTicketsCount, color: .purple, trigger: dashViewModel.lastUpdateTrigger) {
+                                    listConfig = ListConfig(title: "EM PROGRESSO", status: .assigned, isDeleteMode: false)
+                                }
+                                
+                                DashboardStatCard(title: "RESOLVIDOS", value: dashViewModel.resolvedTicketsCount, color: .green, trigger: dashViewModel.lastUpdateTrigger) {
+                                    listConfig = ListConfig(title: "RESOLVIDOS", status: .resolved, isDeleteMode: false)
+                                }
+                                
+                                DashboardStatCard(title: "PRIORITÁRIOS", value: dashViewModel.priorityGlobal, color: .orange, trigger: dashViewModel.lastUpdateTrigger) {
+                                    listConfig = ListConfig(title: "PRIORITÁRIOS", status: .new, isDeleteMode: false)
                                 }
                             }
-                            
-                            // Auto-progress bar
-                            GeometryReader { progressGeo in
-                                ZStack(alignment: .leading) {
-                                    Capsule().fill(Color.white.opacity(0.1))
-                                    Capsule().fill(Color.white.opacity(0.4))
-                                        .frame(width: progressGeo.size.width * progress)
-                                }
-                            }
-                            .frame(height: 3)
+                            .padding(.horizontal, GlpiMetrics.padding)
                             .padding(.top, 5)
-                        }
-                        .padding(.horizontal, 16)
-                        
-                        // 3. CHARTS
-                        VStack(spacing: 15) {
-                            HStack {
-                                ChartTabButton(title: "DESEMPENHO", isSelected: selectedChartType == .performance) {
-                                    withAnimation { selectedChartType = .performance }
-                                }
-                                ChartTabButton(title: "CATEGORIAS", isSelected: selectedChartType == .categories) {
-                                    withAnimation { selectedChartType = .categories }
-                                }
-                            }
-                            .padding(.horizontal, 16)
                             
-                            if selectedChartType == .performance {
-                                PerformanceChartView(performanceData: dashViewModel.performanceData, selectedMonth: $selectedMonth)
-                                    .transition(.move(edge: .leading).combined(with: .opacity))
-                            } else {
-                                CategoriesChartView(categoryData: dashViewModel.categoryData)
-                                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                            Button(action: { showActivities = true }) {
+                                VStack(alignment: .center, spacing: 10) {
+                                    Text("ATUALIZAÇÕES")
+                                        .font(.amiko(size: 14, weight: .bold))
+                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.8))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.top, 5)
+                                    
+                                    TabView(selection: $currentActivityPage) {
+                                        ActivityPage(activities: Array(dashViewModel.activities.prefix(3)))
+                                            .tag(0)
+                                        ActivityPage(activities: Array(dashViewModel.activities.dropFirst(3).prefix(3)))
+                                            .tag(1)
+                                        ActivityPage(activities: Array(dashViewModel.activities.dropFirst(6).prefix(3)))
+                                            .tag(2)
+                                    }
+                                    .tabViewStyle(PageTabViewStyle(indexDisplayMode: .never))
+                                    .frame(height: 200)
+                                    
+                                    HStack(spacing: 8) {
+                                        ForEach(0..<3) { index in
+                                            Capsule()
+                                                .fill(currentActivityPage == index ? GlpiColors.universalBlue : GlpiColors.universalBlue.opacity(0.2))
+                                                .frame(width: currentActivityPage == index ? 30 : 12, height: 6)
+                                                .animation(.spring(), value: currentActivityPage)
+                                        }
+                                    }
+                                    .padding(.bottom, 15)
+                                }
+                                .padding(20)
+                                .frame(maxWidth: .infinity)
+                                .frame(minHeight: 280, alignment: .top)
+                                .glassStyle(cornerRadius: 22)
                             }
-                        }
-                        
-                        // 4. QUICK ACTIONS
-                        VStack(alignment: .leading, spacing: 15) {
-                            Text("AÇÕES RÁPIDAS")
-                                .font(.amiko(size: 14, weight: .bold))
-                                .foregroundColor(.white.opacity(0.8))
-                                .padding(.horizontal, 20)
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.horizontal, GlpiMetrics.padding)
                             
-                            HStack(spacing: 15) {
-                                DashboardQuickActionCard(title: "NOVO TICKET", icon: "ticket", color: .white) {
-                                    showCreateTicket = true
+                            GLPIHorizontalScrollContainer {
+                                HStack(spacing: GlpiMetrics.actionSpacing) {
+                                    let cardWidth = (UIScreen.screenWidth - (GlpiMetrics.padding * 2) - (GlpiMetrics.actionSpacing * 2)) / 3
+                                    
+                                    DashboardQuickActionCard(title: "NOVO TICKET", icon: "plus.circle.fill") {
+                                        showCreateTicket = true
+                                    }
+                                    .frame(width: cardWidth)
+                                    
+                                    DashboardQuickActionCard(title: "VISTA GERAL", icon: "square.grid.2x2.fill") {
+                                        listConfig = ListConfig(title: "VISTA GERAL", status: nil, isDeleteMode: false)
+                                    }
+                                    .frame(width: cardWidth)
+                                    
+                                    DashboardQuickActionCard(title: "ELIMINAR", icon: "trash.fill") {
+                                        listConfig = ListConfig(title: "ELIMINAR", status: .deleted, isDeleteMode: true)
+                                    }
+                                    .frame(width: cardWidth)
+                                    
+                                    DashboardQuickActionCard(title: "ESTATÍSTICAS", icon: "chart.bar.fill") {
+                                        showStatistics = true
+                                    }
+                                    .frame(width: cardWidth)
                                 }
-                                DashboardQuickActionCard(title: "MEUS TICKET", icon: "person.text.rectangle", color: .white) {
-                                    // Meus tickets
-                                }
-                                DashboardQuickActionCard(title: "PESQUISAR", icon: "magnifyingglass", color: .white) {
-                                    // Pesquisar
-                                }
+                                .padding(.horizontal, GlpiMetrics.padding)
                             }
-                            .padding(.horizontal, 16)
+                            .padding(.top, 5)
+                            
+                            Spacer(minLength: 20)
                         }
-                        
-                        Spacer(minLength: 120)
+                        .padding(.top, dashViewModel.isManualRefresh ? 80 : 0)
+                        .animation(.spring(response: 0.6, dampingFraction: 0.8), value: dashViewModel.isManualRefresh)
                     }
-                    .padding(.top, 10)
                 }
+                .scrollDismissesKeyboard(.immediately)
+                .padding(.top, 10)
+                .refreshable {
+                    let generator = UIImpactFeedbackGenerator(style: .medium)
+                    generator.impactOccurred()
+                    await dashViewModel.refreshData(isManual: true)
+                }
+            }
+            .fullScreenCover(item: $listConfig) { config in
+                TicketListView(title: config.title, statusFilter: config.status, isDeleteMode: config.isDeleteMode, isPersonalView: config.isDeleteMode ? false : dashViewModel.isPersonalView)
+            }
+            .fullScreenCover(isPresented: $showStatistics) {
+                StatisticsView()
+            }
+            .fullScreenCover(isPresented: $showActivities) {
+                TicketListView(title: "ATUALIZAÇÕES", initialPage: currentActivityPage + 1)
             }
             
-            // Loading Overlay
-            if dashViewModel.isLoading {
-                ZStack {
-                    Color.black.opacity(0.3).ignoresSafeArea()
-                    ProgressView()
-                        .tint(.white)
-                        .scaleEffect(1.5)
-                }
-            }
+
+        }
+        .onAppear {
+            UIRefreshControl.appearance().tintColor = UIColor(GlpiColors.universalBlue)
+            UIPageControl.appearance().currentPageIndicatorTintColor = UIColor(GlpiColors.universalBlue)
+            UIPageControl.appearance().pageIndicatorTintColor = UIColor(GlpiColors.universalBlue).withAlphaComponent(0.2)
         }
         .onReceive(timer) { _ in
             if !isPaused {
@@ -192,8 +195,10 @@ struct DashboardView: View {
             TicketCreateView()
         }
         .task {
-            await dashViewModel.refreshData()
+            await dashViewModel.refreshData(isManual: false)
         }
+        .frame(width: UIScreen.main.bounds.width)
+        .clipped()
     }
 }
 
@@ -207,7 +212,7 @@ struct ChartTabButton: View {
         Button(action: action) {
             Text(title)
                 .font(.amiko(size: 12, weight: .bold))
-                .foregroundColor(isSelected ? .white : .white.opacity(0.4))
+                .foregroundColor(isSelected ? GlpiColors.dynamicText : GlpiColors.dynamicText.opacity(0.4))
                 .frame(maxWidth: .infinity)
                 .frame(height: 40)
                 .background(isSelected ? Color.white.opacity(0.1) : Color.clear)
@@ -302,4 +307,38 @@ struct CategoriesChartView: View {
 
 #Preview {
     DashboardView(isLoggedIn: .constant(true))
+}
+
+// MARK: - Componentes de Atividade (Carrossel)
+
+struct ActivityPage: View {
+    let activities: [(title: String, desc: String, status: String)]
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<activities.count, id: \.self) { index in
+                ActivityRowMini(activity: activities[index])
+            }
+            Spacer()
+        }
+        .padding(.top, 10)
+    }
+}
+
+struct ActivityRowMini: View {
+    let activity: (title: String, desc: String, status: String)
+    
+    var body: some View {
+        HStack(spacing: 12) {
+            Text(activity.title.uppercased())
+                .font(.amiko(size: 13, weight: .bold))
+                .foregroundColor(GlpiColors.dynamicText)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            GLPIBadge(text: activity.status)
+        }
+        .padding(.vertical, 24)
+    }
 }

@@ -9,12 +9,13 @@ import SwiftUI
 struct GLPIAsset: Identifiable {
     let id = UUID()
     let name: String
-    let tag: String // Alterado de serial para tag para bater com InventoryView
-    let icon: String // Adicionado icon para bater com InventoryView
+    let tag: String 
+    let icon: String 
     let type: AssetType
     let status: String
     let owner: String?
-    let location: String?
+    let department: String?
+    let serialNumber: String
 }
 
 typealias Asset = GLPIAsset
@@ -37,11 +38,20 @@ enum AssetType: String {
 
 // --- Modelos de Tickets ---
 
+struct TicketResponse: Identifiable {
+    let id = UUID()
+    let author: String
+    let content: String
+    let date: Date
+    let isInternal: Bool
+}
+
 struct GLPITicket: Identifiable {
     let id: String
     var name: String // Alterado de title para name para bater com TicketRowView
     var title: String { name } // Alias for backward compatibility
     var requester: String
+    var author: String // Novo campo para o criador real
     var assignedTo: String
     let description: String
     let date: Date // Alterado de String para Date para bater com TicketRowView
@@ -49,6 +59,7 @@ struct GLPITicket: Identifiable {
     let status: TicketStatus
     let isMine: Bool
     let isAssignedToMe: Bool
+    var responses: [TicketResponse] = [] // Nova lista de respostas
 }
 
 typealias Ticket = GLPITicket

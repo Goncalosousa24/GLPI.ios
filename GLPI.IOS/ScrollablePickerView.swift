@@ -4,7 +4,8 @@ import SwiftUI
 struct ScrollablePickerView: View {
     let options: [String]
     @Binding var selected: String
-    var onSelect: () -> Void
+    var onSelect: () -> Void = {}
+    var showNone: Bool = false
 
     private let rowHeight:  CGFloat = 44
     private let spacing:    CGFloat = 4
@@ -21,9 +22,9 @@ struct ScrollablePickerView: View {
     @State private var contentOffset: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
 
-    // Adiciona "Nenhum" no topo apenas quando já existe seleção
+    // Adiciona "Nenhum" no topo apenas quando solicitado e já existe seleção
     private var displayedOptions: [String] {
-        guard !selected.isEmpty else { return options }
+        guard showNone && !selected.isEmpty else { return options }
         return ["— Nenhum —"] + options
     }
 
@@ -31,8 +32,18 @@ struct ScrollablePickerView: View {
         ZStack(alignment: .trailing) {
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(alignment: .leading, spacing: spacing) {
-                    ForEach(displayedOptions, id: \.self) { opt in
-                        if opt == "— Nenhum —" {
+                    if displayedOptions.isEmpty {
+                        HStack {
+                            Spacer()
+                            Text("Sem resultados")
+                                .font(.amiko(size: 13, weight: .regular))
+                                .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                .padding(.vertical, 20)
+                            Spacer()
+                        }
+                    } else {
+                        ForEach(displayedOptions, id: \.self) { opt in
+                            if opt == "— Nenhum —" {
                             // Opção especial de limpeza
                             Button(action: {
                                 selected = ""
@@ -40,16 +51,14 @@ struct ScrollablePickerView: View {
                             }) {
                                 HStack {
                                     Text("Nenhum")
-                                        .font(.amiko(size: 14, weight: .regular))
-                                        .foregroundColor(.white.opacity(0.35))
-                                        .italic()
+                                        .font(.amiko(size: 14, weight: .bold))
+                                        .foregroundColor(GlpiColors.dynamicBlueText)
                                     Spacer()
-                                    Image(systemName: "xmark")
-                                        .foregroundColor(.white.opacity(0.25))
-                                        .font(.system(size: 12, weight: .medium))
                                 }
                                 .padding(.horizontal, 16)
                                 .frame(height: 44)
+                                .background(GlpiColors.universalBlue.opacity(0.05))
+                                .cornerRadius(12)
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
@@ -65,7 +74,8 @@ struct ScrollablePickerView: View {
                         }
                     }
                 }
-                .overlay(
+            }
+            .overlay(
                     GeometryReader { proxy in
                         Color.clear.preference(
                             key: SPOffsetKey.self,
@@ -106,7 +116,7 @@ struct ScrollablePickerView: View {
                 let progress           = min(max(contentOffset / maxScroll, 0), 1)
 
                 Capsule()
-                    .fill(Color.white.opacity(0.55))
+                    .fill(GlpiColors.universalBlue.opacity(0.8))
                     .frame(width: 5, height: barH)
                     .padding(.trailing, 5)
                     .frame(maxHeight: .infinity, alignment: .top)

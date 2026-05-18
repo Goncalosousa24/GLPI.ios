@@ -1,4 +1,3 @@
-
 import SwiftUI
 
 struct ReservationAsset: Identifiable {
@@ -13,27 +12,28 @@ struct ReservationAsset: Identifiable {
 
 struct ReservationsView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("isLightMode_V2") var isLightMode: Bool = true
+    
     @State private var searchText = ""
     @State private var selectedCategory: String? = nil
     @State private var selectedStatus = "Geral"
     @State private var showFilterMenu = false
+    
     let categoryOptions = ["Computadores", "Periféricos"]
     let statusOptions = ["Geral", "Livres", "Reservados"]
     
     private var pillWidth: CGFloat {
-        let screenWidth = UIScreen.screenWidth
-        let padding: CGFloat = 32
+        let totalPadding = (GlpiMetrics.padding * 2)
         let spacing: CGFloat = 12
-        return (screenWidth - padding - spacing) / 2
+        return (UIScreen.screenWidth - totalPadding - spacing) / 2
     }
     
-    
     @State private var reservations: [ReservationAsset] = [
-        ReservationAsset(name: "MacBook Air M2", serial: "SN: MBA-9102", type: .computer, isReserved: true, reservedBy: "Gonçalo Sousa", reservationDate: "24/04/2026 - 28/04/2026"),
-        ReservationAsset(name: "Projector Epson X41", serial: "SN: EP-4412", type: .network, isReserved: false),
-        ReservationAsset(name: "iPad Pro 12.9\"", serial: "SN: IP-7788", type: .computer, isReserved: true, reservedBy: "Ana Martins", reservationDate: "23/04/2026 - 25/04/2026"),
-        ReservationAsset(name: "Monitor Portátil ASUS", serial: "SN: AS-1122", type: .monitor, isReserved: false),
-        ReservationAsset(name: "Kit WebCam + Tripé", serial: "SN: WC-3344", type: .network, isReserved: false)
+        ReservationAsset(name: "MacBook Air M2", serial: "MBA-9102", type: .computer, isReserved: true, reservedBy: "Gonçalo Sousa", reservationDate: "24/04/2026 - 28/04/2026"),
+        ReservationAsset(name: "Projector Epson X41", serial: "EP-4412", type: .network, isReserved: false),
+        ReservationAsset(name: "iPad Pro 12.9\"", serial: "IP-7788", type: .computer, isReserved: true, reservedBy: "Ana Martins", reservationDate: "23/04/2026 - 25/04/2026"),
+        ReservationAsset(name: "Monitor Portátil ASUS", serial: "AS-1122", type: .monitor, isReserved: false),
+        ReservationAsset(name: "Kit WebCam + Tripé", serial: "WC-3344", type: .network, isReserved: false)
     ]
     
     var filteredReservations: [ReservationAsset] {
@@ -65,66 +65,36 @@ struct ReservationsView: View {
     var body: some View {
         ZStack {
             GlpiColors.premiumBackground.ignoresSafeArea()
+                .universalBackgroundDismiss {
+                    if showFilterMenu {
+                        withAnimation(.spring()) { showFilterMenu = false }
+                    }
+                }
             
             VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 45, height: 45)
-                            .glassStyle(cornerRadius: 12)
-                    }
-                    
-                    Spacer()
-                    
-                    Spacer()
-                    
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
+                headerView
                 
-                VStack(spacing: 0) {
-                    // Search Bar & Filter Button
-                    HStack(spacing: 12) {
-                        HStack {
-                            Image(systemName: "magnifyingglass")
-                                .foregroundColor(.white.opacity(0.4))
-                            TextField("", text: $searchText, prompt: 
-                                Text("Procurar equipamento...")
-                                    .foregroundColor(.white.opacity(0.3))
-                                    .font(.amiko(size: 14))
-                            )
-                            .foregroundColor(.white)
-                            .font(.amiko(size: 14))
-                        }
-                        .padding()
-                        .glassStyle(cornerRadius: 18)
-                        .frame(height: 55)
-                        
-                        Button(action: { 
-                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                                showFilterMenu.toggle() 
+                // 1. Pesquisa e Filtros (Estilo Dashboard)
+                VStack(spacing: 20) {
+                    GLPISearchHeader(
+                        searchText: $searchText,
+                        placeholder: "Pesquisar equipamento...",
+                        rightIcon: "line.3.horizontal.decrease.circle",
+                        isSystemIcon: true,
+                        isRightIconSelected: selectedStatus != "Geral",
+                        rightIconAction: {
+                            withAnimation(.spring()) {
+                                showFilterMenu.toggle()
                             }
-                        }) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                                .font(.system(size: 20))
-                                .foregroundColor(.white)
-                                .frame(width: 55, height: 55)
-                                .glassStyle(cornerRadius: 18)
                         }
-                    }
+                    )
                     
-                    Spacer().frame(height: 24) // Espaçamento equilibrado (cima)
-                    
-                    HStack {
-                        Spacer()
+                    // Category Pills
+                    ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
                             ForEach(categoryOptions, id: \.self) { option in
-                                FilterPill(title: option, isSelected: selectedCategory == option, width: pillWidth) {
-                                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                FilterPill(title: option.uppercased(), isSelected: selectedCategory == option, width: pillWidth) {
+                                    withAnimation(.spring()) {
                                         if selectedCategory == option {
                                             selectedCategory = nil
                                         } else {
@@ -134,78 +104,122 @@ struct ReservationsView: View {
                                 }
                             }
                         }
-                        Spacer()
+                        .padding(.horizontal, GlpiMetrics.padding)
                     }
-                    
-                    Spacer().frame(height: 12) // Espaçamento equilibrado (12 + 12 do ScrollView = 24)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 25)
+                .padding(.top, 5)
                 
+                // 2. Lista de Ativos
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 15) {
                         ScrollOffsetTracker()
-                        ForEach(filteredReservations) { asset in
-                            ReservationRow(asset: asset)
+                        
+                        HStack {
+                            Text("DISPONIBILIDADE - \(selectedStatus.uppercased())")
+                                .font(.amiko(size: 14, weight: .bold))
+                                .foregroundColor(GlpiColors.dynamicText.opacity(0.8))
+                            Spacer()
                         }
+                        .padding(.horizontal, GlpiMetrics.padding + 5)
+                        .padding(.top, 10)
+                        
+                        VStack(spacing: 12) {
+                            ForEach(filteredReservations) { asset in
+                                ReservationRow(asset: asset)
+                            }
+                        }
+                        .padding(.horizontal, GlpiMetrics.padding)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.top, 0)
+                    .padding(.top, 10)
+                    .padding(.bottom, 60)
                 }
             }
-            .blur(radius: showFilterMenu ? 20 : 0)
-            .animation(.spring(), value: showFilterMenu)
+            .blur(radius: showFilterMenu ? 15 : 0)
             
-            // Overlay de Filtros (Estilo Tickets)
+            // Menu de Filtros de Status (Estilo Tickets)
             if showFilterMenu {
-                Color.black.opacity(0.4)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        withAnimation(.spring()) { showFilterMenu = false }
-                    }
+                filterMenuOverlay
+            }
+        }
+        .preferredColorScheme(isLightMode ? .light : .dark)
+    }
+    
+    // MARK: - Components
+    
+    private var headerView: some View {
+        HStack {
+            Button(action: { dismiss() }) {
+                Image(systemName: GlpiMetrics.universalBackIcon)
+                    .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
+                    .foregroundColor(GlpiColors.dynamicText)
+            }
+            .padding(.leading, GlpiMetrics.padding + 5)
+            
+            Spacer()
+            
+            Text("RESERVAS")
+                .font(.amiko(size: 16, weight: .black))
+                .foregroundColor(GlpiColors.dynamicBlueText)
+            
+            Spacer()
+            
+            Color.clear.frame(width: 44, height: 44)
+        }
+        .padding(.top, 5)
+        .frame(height: GlpiMetrics.navAreaHeight - 5)
+    }
+    
+    private var filterMenuOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.2)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    withAnimation(.spring()) { showFilterMenu = false }
+                }
+            
+            VStack(spacing: 0) {
+                Text("FILTRAR POR ESTADO")
+                    .font(.amiko(size: 12, weight: .bold))
+                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                    .padding(.top, 25)
+                    .padding(.bottom, 15)
                 
                 VStack(spacing: 0) {
-                    Text("FILTRAR POR ESTADO")
-                        .font(.amiko(size: 12, weight: .bold))
-                        .foregroundColor(.white.opacity(0.4))
-                        .padding(.top, 25)
-                        .padding(.bottom, 12)
-                    
                     ForEach(statusOptions, id: \.self) { option in
-                        filterMenuItem(title: option, isSelected: selectedStatus == option) {
+                        Button(action: {
                             withAnimation(.spring()) {
                                 selectedStatus = option
                                 showFilterMenu = false
                             }
+                        }) {
+                            HStack {
+                                Text(option.uppercased())
+                                    .font(.amiko(size: 14, weight: selectedStatus == option ? .black : .bold))
+                                Spacer()
+                                if selectedStatus == option {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(GlpiColors.universalBlue)
+                                }
+                            }
+                            .foregroundColor(GlpiColors.dynamicText)
+                            .padding(20)
                         }
+                        
                         if option != statusOptions.last {
-                            Divider().background(Color.white.opacity(0.1)).padding(.horizontal, 16)
+                            Divider().background(GlpiColors.dynamicText.opacity(0.05))
+                                .padding(.horizontal, 20)
                         }
                     }
-                    
-                    Spacer().frame(height: 15)
                 }
-                .frame(maxWidth: .infinity)
                 .glassStyle(cornerRadius: 30)
-                .padding(.horizontal, 16)
-                .shadow(color: .blue.opacity(0.2), radius: 40)
-                .transition(.scale(scale: 0.9).combined(with: .opacity))
-                .zIndex(10)
+                .padding(.horizontal, 20)
+                
+                Spacer().frame(height: 30)
             }
+            .padding(.horizontal, 16)
         }
-        .navigationBarHidden(true)
-    }
-    
-    private func filterMenuItem(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title).font(.amiko(size: 14, weight: isSelected ? .bold : .regular))
-                Spacer()
-                if isSelected { Image(systemName: "checkmark").foregroundColor(.blue) }
-            }
-            .foregroundColor(.white)
-            .padding(16)
-        }
+        .transition(.move(edge: .bottom).combined(with: .opacity))
+        .zIndex(10)
     }
 }
 
@@ -215,158 +229,197 @@ struct ReservationRow: View {
     @State private var showReserveSheet = false
     
     var body: some View {
-        VStack(spacing: 15) {
+        VStack(alignment: .leading, spacing: 18) {
+            // 1. Header do Ativo
             HStack(spacing: 15) {
-                // Icon
-                ZStack {
-                    Circle()
-                        .fill(Color.blue.opacity(0.15))
-                        .frame(width: 45, height: 45)
-                    
-                    Image(systemName: asset.type.rawValue)
-                        .foregroundColor(.white)
-                        .font(.system(size: 18))
-                }
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(asset.name)
-                        .font(.amiko(size: 15, weight: .bold))
-                        .foregroundColor(.white)
-                    Text(asset.serial)
-                        .font(.amiko(size: 12))
-                        .foregroundColor(.white.opacity(0.5))
-                }
+                // Nome em Azul (Padronizado)
+                Text(asset.name.uppercased())
+                    .font(.amiko(size: 16, weight: .black))
+                    .foregroundColor(GlpiColors.dynamicBlueText)
                 
                 Spacer()
                 
                 // Status Badge
-                Text(asset.isReserved ? "RESERVADO" : "LIVRE")
-                    .font(.amiko(size: 9, weight: .bold))
-                    .frame(width: 85, height: 24) // Tamanho fixo para consistência
-                    .background(asset.isReserved ? Color.red.opacity(0.2) : Color.green.opacity(0.2))
-                    .foregroundColor(asset.isReserved ? .red : .green)
-                    .clipShape(Capsule())
+                GLPIBadge(text: asset.isReserved ? "RESERVADO" : "LIVRE")
             }
             
+            // 2. Info Grid
+            HStack(alignment: .top, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("S/N")
+                        .font(.amiko(size: 9, weight: .bold))
+                        .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                    Text(asset.serial.uppercased())
+                        .font(.amiko(size: 11, weight: .black))
+                        .foregroundColor(GlpiColors.dynamicText.opacity(0.9))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("TIPO")
+                        .font(.amiko(size: 9, weight: .bold))
+                        .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                    Text(asset.type.displayName.uppercased())
+                        .font(.amiko(size: 11, weight: .black))
+                        .foregroundColor(GlpiColors.dynamicText.opacity(0.9))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                
+                if asset.isReserved {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("RESERVADO POR")
+                            .font(.amiko(size: 9, weight: .bold))
+                            .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                        Text(asset.reservedBy?.uppercased() ?? "N/A")
+                            .font(.amiko(size: 11, weight: .black))
+                            .foregroundColor(GlpiColors.dynamicText.opacity(0.9))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            
+            Divider().background(GlpiColors.dynamicText.opacity(0.05))
+            
+            // 3. Botões de Ação
             HStack(spacing: 12) {
-                // Botão Mais Info
-                Button(action: { showInfo = true }) {
+                Button(action: { 
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    showInfo = true 
+                }) {
                     HStack {
                         Image(systemName: "info.circle")
                         Text("MAIS INFO")
                     }
-                    .font(.amiko(size: 11, weight: .bold))
-                    .foregroundColor(.white)
+                    .font(.amiko(size: 11, weight: .black))
+                    .foregroundColor(GlpiColors.dynamicText)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .glassStyle(cornerRadius: 12)
+                    .frame(height: 44)
+                    .glassStyle(cornerRadius: 15)
                 }
                 
-                // Botão Reservar
-                Button(action: { showReserveSheet = true }) {
+                Button(action: { 
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showReserveSheet = true 
+                }) {
                     HStack {
                         Image(systemName: "calendar.badge.plus")
                         Text(asset.isReserved ? "ALTERAR" : "RESERVAR")
                     }
-                    .font(.amiko(size: 11, weight: .bold))
-                    .foregroundColor(.black)
+                    .font(.amiko(size: 11, weight: .black))
+                    .foregroundColor(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 40)
-                    .background(Color.white)
-                    .cornerRadius(12)
+                    .frame(height: 44)
+                    .background(
+                        Capsule()
+                            .fill(GlpiColors.universalBlue)
+                    )
                 }
-                .disabled(asset.isReserved) // Opcional: Desativar se já estiver reservado, ou permitir "Alterar"
-                .opacity(asset.isReserved ? 0.5 : 1.0)
+                .disabled(asset.isReserved)
+                .opacity(asset.isReserved ? 0.3 : 1.0)
             }
         }
-        .padding(18)
+        .padding(20)
         .glassStyle(cornerRadius: 22)
-        .sheet(isPresented: $showInfo) {
+        .fullScreenCover(isPresented: $showInfo) {
             ReservationDetailView(asset: asset)
+        }
+        .fullScreenCover(isPresented: $showReserveSheet) {
+            AssetReservationView(asset: asset)
         }
     }
 }
 
 struct ReservationDetailView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("isLightMode_V2") var isLightMode: Bool = true
     let asset: ReservationAsset
     
     var body: some View {
         ZStack {
             GlpiColors.premiumBackground.ignoresSafeArea()
+                .universalBackgroundDismiss { dismiss() }
             
-            VStack(spacing: 25) {
-                // Handle de fecho
-                Capsule()
-                    .fill(Color.white.opacity(0.2))
-                    .frame(width: 40, height: 6)
-                    .padding(.top, 15)
+            VStack(spacing: 0) {
+                // Header Standard
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: GlpiMetrics.universalBackIcon)
+                            .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
+                            .foregroundColor(GlpiColors.dynamicText)
+                    }
+                    .padding(.leading, GlpiMetrics.padding + 5)
+                    
+                    Spacer()
+                    
+                    Text("DETALHES DO ATIVO")
+                        .font(.amiko(size: 16, weight: .black))
+                        .foregroundColor(GlpiColors.dynamicBlueText)
+                    
+                    Spacer()
+                    
+                    Color.clear.frame(width: 44, height: 44)
+                }
+                .frame(height: GlpiMetrics.navAreaHeight)
                 
-                Text("DETALHES DA RESERVA")
-                    .font(.amiko(size: 18, weight: .bold))
-                    .foregroundColor(.white)
+                Spacer() // Empurra para o centro
                 
-                VStack(spacing: 20) {
-                    InfoField(label: "EQUIPAMENTO", value: asset.name, icon: "desktopcomputer")
-                    InfoField(label: "SÉRIE", value: asset.serial, icon: "barcode")
+                // Card de Informação Premium (Centrado)
+                VStack(alignment: .leading, spacing: 20) {
+                    DetailRow(label: "NOME DO EQUIPAMENTO", value: asset.name.uppercased())
+                    DetailRow(label: "NÚMERO DE SÉRIE", value: asset.serial.uppercased())
+                    DetailRow(label: "CATEGORIA", value: asset.type.displayName.uppercased())
+                    
+                    Divider().background(GlpiColors.dynamicText.opacity(0.1))
                     
                     if asset.isReserved {
-                        InfoField(label: "RESERVADO POR", value: asset.reservedBy ?? "N/A", icon: "person.fill")
-                        InfoField(label: "PERÍODO", value: asset.reservationDate ?? "N/A", icon: "calendar")
+                        DetailRow(label: "RESERVADO POR", value: asset.reservedBy?.uppercased() ?? "N/A")
+                        DetailRow(label: "PERÍODO DA RESERVA", value: asset.reservationDate?.uppercased() ?? "N/A")
                     } else {
-                        HStack {
+                        HStack(spacing: 8) {
                             Image(systemName: "checkmark.circle.fill")
                                 .foregroundColor(.green)
-                            Text("Disponível para reserva imediata")
-                                .font(.amiko(size: 14))
-                                .foregroundColor(.white.opacity(0.7))
+                                .font(.system(size: 16, weight: .bold))
+                            Text("DISPONÍVEL PARA RESERVA")
+                                .font(.amiko(size: 13, weight: .black))
+                                .foregroundColor(.green)
                         }
-                        .padding(.top, 10)
+                        .padding(.top, 5)
                     }
+                    
+                    Spacer(minLength: 0)
                 }
-                .padding(25)
-                .glassStyle(cornerRadius: 22)
-                
-                Spacer()
-                
-                Button(action: { dismiss() }) {
-                    Text("FECHAR")
-                        .font(.amiko(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .glassStyle(cornerRadius: 22)
-                }
+                .padding(30)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 350)
+                .glassStyle(cornerRadius: 30)
                 .padding(.horizontal, 16)
-                .padding(.bottom, 40)
+                
+                Spacer() // Empurra para o centro
+                Spacer().frame(height: 50) // Compensação visual para o centro real
             }
-            .padding(.horizontal, 16)
+        }
+        .preferredColorScheme(isLightMode ? .light : .dark)
+    }
+}
+
+struct DetailRow: View {
+    let label: String
+    let value: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.amiko(size: 10, weight: .bold))
+                .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+            Text(value)
+                .font(.amiko(size: 16, weight: .black))
+                .foregroundColor(GlpiColors.dynamicText)
         }
     }
 }
 
-struct InfoField: View {
-    let label: String
-    let value: String
-    let icon: String
-    
-    var body: some View {
-        HStack(spacing: 15) {
-            Image(systemName: icon)
-                .foregroundColor(.blue)
-                .frame(width: 20)
-            
-            VStack(alignment: .leading, spacing: 2) {
-                Text(label)
-                    .font(.amiko(size: 9, weight: .bold))
-                    .foregroundColor(.white.opacity(0.4))
-                Text(value)
-                    .font(.amiko(size: 15))
-                    .foregroundColor(.white)
-            }
-            Spacer()
-        }
-    }
+#Preview {
+    ReservationsView()
 }
 
 #Preview {

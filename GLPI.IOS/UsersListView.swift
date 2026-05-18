@@ -79,50 +79,45 @@ struct UsersListView: View {
             GlpiColors.premiumBackground.ignoresSafeArea()
             
             VStack(spacing: 0) {
-                // Header customizado
+                // 1. UNIVERSAL HEADER
                 HStack {
                     Button(action: { dismiss() }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
-                            .frame(width: 45, height: 45)
-                            .glassStyle(cornerRadius: 12)
+                        Image(systemName: GlpiMetrics.universalBackIcon)
+                            .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
+                            .foregroundColor(GlpiColors.dynamicText)
                     }
+                    .padding(.leading, GlpiMetrics.universalHeaderLeading)
                     
                     Spacer()
                     
                     Text("UTILIZADORES")
-                        .font(.amiko(size: 18, weight: .bold))
-                        .foregroundColor(.white)
+                        .font(.amiko(size: 18, weight: .black))
+                        .foregroundColor(GlpiColors.dynamicText)
                     
                     Spacer()
                     
-                    Color.clear.frame(width: 45, height: 45)
+                    // Compensação para centrar título
+                    Color.clear.frame(width: 44, height: 44)
+                        .padding(.trailing, GlpiMetrics.universalHeaderLeading)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
+                .padding(.top, GlpiMetrics.topPadding + 5)
+                .frame(height: GlpiMetrics.navAreaHeight)
                 
-                // Search Bar Premium
-                HStack {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.white.opacity(0.4))
-                        TextField("", text: $searchText, prompt: 
-                            Text("Pesquisar utilizador...")
-                                .foregroundColor(.white.opacity(0.3))
-                                .font(.amiko(size: 14))
-                        )
-                        .font(.amiko(size: 14))
-                        .foregroundColor(.white)
+                // 2. SEARCH BAR (Sincronizada)
+                GLPISearchHeader(
+                    searchText: $searchText,
+                    placeholder: "Pesquisar utilizador...",
+                    rightIcon: "line.3.horizontal.decrease",
+                    isSystemIcon: true,
+                    isRightIconSelected: selectedFilter != nil,
+                    rightIconAction: {
+                        withAnimation { showFilterMenu.toggle() }
                     }
-                    .padding(.horizontal, 16)
-                    .frame(height: 55)
-                    .glassStyle(cornerRadius: 18)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 20)
+                )
+                .padding(.top, GlpiMetrics.topPadding)
+                .padding(.bottom, 10)
                 
-                // Horizontal Filters with Arrows
+                // 3. FILTROS HORIZONTAIS (Premium com Setas)
                 HStack(spacing: 12) {
                     HStack(spacing: 12) {
                         ForEach(currentFilters, id: \.self) { filter in
@@ -134,6 +129,7 @@ struct UsersListView: View {
                                         selectedFilter = filter
                                     }
                                     currentPage = 1
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 }
                             }
                             .id(filter)
@@ -146,6 +142,7 @@ struct UsersListView: View {
                     ))
                     .id("FilterPage_\(filterPageIndex)")
                     
+                    // Controlos de Navegação dos Filtros
                     HStack(spacing: 0) {
                         Button(action: {
                             withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
@@ -157,14 +154,14 @@ struct UsersListView: View {
                             }
                         }) {
                             Image(systemName: "chevron.left")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.6))
-                                .frame(width: 35, height: 44)
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                .frame(width: 30, height: 44)
                         }
                         
                         Rectangle()
-                            .fill(Color.white.opacity(0.1))
-                            .frame(width: 1, height: 18)
+                            .fill(GlpiColors.dynamicText.opacity(0.1))
+                            .frame(width: 1, height: 14)
                         
                         Button(action: {
                             withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) {
@@ -172,18 +169,20 @@ struct UsersListView: View {
                             }
                         }) {
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.white.opacity(0.6))
-                                .frame(width: 35, height: 44)
+                                .font(.system(size: 10, weight: .black))
+                                .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                .frame(width: 30, height: 44)
                         }
                     }
-                    .glassStyle(cornerRadius: 12)
+                    .padding(.horizontal, 4)
+                    .background(Capsule().fill(GlpiColors.dynamicOffWhite))
+                    .overlay(Capsule().stroke(Color.black.opacity(0.05), lineWidth: 0.5))
                 }
                 .frame(height: 50)
-                .padding(.horizontal, 16)
-                .padding(.top, 15)
+                .padding(.horizontal, GlpiMetrics.padding)
+                .padding(.bottom, 15)
                 
-                // List
+                // 4. LISTA DE UTILIZADORES
                 ScrollViewReader { listProxy in
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 15) {
@@ -194,29 +193,32 @@ struct UsersListView: View {
                                 VStack(spacing: 15) {
                                     Image(systemName: "person.crop.circle.badge.questionmark")
                                         .font(.system(size: 40))
-                                        .foregroundColor(.white.opacity(0.2))
+                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.2))
                                     Text("Nenhum utilizador encontrado")
                                         .font(.amiko(size: 14))
-                                        .foregroundColor(.white.opacity(0.4))
+                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
                                 }
                                 .padding(.top, 100)
                             } else {
                                 ForEach(filteredUsers) { user in
                                     UserRow(user: user)
-                                        .padding(.horizontal, 18)
-                                        .frame(height: 100)
+                                        .padding(.horizontal, 16)
+                                        .frame(height: 90)
                                         .glassStyle(cornerRadius: 22)
                                 }
                             }
                             
-                            // Pagination
+                            // Paginação Premium
                             HStack(spacing: 0) {
                                 Button(action: {
-                                    if currentPage > 1 { withAnimation { currentPage -= 1 } }
+                                    if currentPage > 1 { 
+                                        withAnimation { currentPage -= 1 }
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
                                 }) {
                                     Image(systemName: "chevron.left")
                                         .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(GlpiColors.dynamicText)
                                         .opacity(currentPage == 1 ? 0.2 : 1.0)
                                         .frame(width: 50, height: 50)
                                 }
@@ -224,18 +226,21 @@ struct UsersListView: View {
                                 
                                 Spacer()
                                 
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.15))
-                                    .frame(width: 1, height: 24)
+                                Text("PÁGINA \(currentPage) DE \(totalPages)")
+                                    .font(.amiko(size: 10, weight: .black))
+                                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
                                 
                                 Spacer()
                                 
                                 Button(action: {
-                                    if currentPage < totalPages { withAnimation { currentPage += 1 } }
+                                    if currentPage < totalPages { 
+                                        withAnimation { currentPage += 1 }
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    }
                                 }) {
                                     Image(systemName: "chevron.right")
                                         .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(GlpiColors.dynamicText)
                                         .opacity(currentPage == totalPages ? 0.2 : 1.0)
                                         .frame(width: 50, height: 50)
                                 }
@@ -244,13 +249,13 @@ struct UsersListView: View {
                             .padding(.horizontal, 10)
                             .frame(maxWidth: .infinity)
                             .frame(height: 50)
-                            .glassStyle(cornerRadius: 15)
+                            .background(Capsule().fill(GlpiColors.dynamicOffWhite))
+                            .overlay(Capsule().stroke(Color.black.opacity(0.05), lineWidth: 0.5))
                             .padding(.vertical, 20)
                             
                             Spacer(minLength: 120)
                         }
-                        .padding(16)
-                        .padding(.top, -5)
+                        .padding(GlpiMetrics.padding)
                     }
                     .onChange(of: currentPage) { oldValue, newValue in
                         withAnimation(.spring()) {
@@ -270,30 +275,33 @@ struct UsersListView: View {
     
     private var filterOverlayView: some View {
         ZStack {
-            Color.black.opacity(0.5)
+            Color.black.opacity(0.4)
                 .ignoresSafeArea()
                 .onTapGesture { withAnimation(.spring()) { showFilterMenu = false } }
             
             VStack(alignment: .leading, spacing: 0) {
-                Text("FILTRAR POR")
-                    .font(.amiko(size: 13, weight: .bold))
-                    .foregroundColor(.white.opacity(0.4))
-                    .padding(.horizontal, 16)
+                Text("FILTRAR POR PERFIL")
+                    .font(.amiko(size: 13, weight: .black))
+                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                    .padding(.horizontal, 20)
                     .padding(.top, 25)
                     .padding(.bottom, 12)
                 
                 ForEach(filters, id: \.self) { filter in
                     filterMenuItem(title: filter, isSelected: selectedFilter == filter) {
-                        if selectedFilter == filter {
-                            selectedFilter = nil
-                        } else {
-                            selectedFilter = filter
+                        withAnimation(.spring()) {
+                            if selectedFilter == filter {
+                                selectedFilter = nil
+                            } else {
+                                selectedFilter = filter
+                            }
+                            showFilterMenu = false
+                            currentPage = 1
                         }
-                        withAnimation(.spring()) { showFilterMenu = false }
                     }
                     
                     if filter != filters.last {
-                        Divider().background(Color.white.opacity(0.1)).padding(.horizontal, 16)
+                        Divider().background(GlpiColors.dynamicText.opacity(0.05)).padding(.horizontal, 20)
                     }
                 }
                 
@@ -301,8 +309,8 @@ struct UsersListView: View {
             }
             .frame(maxWidth: .infinity)
             .glassStyle(cornerRadius: 30)
-            .padding(.horizontal, 16)
-            .shadow(color: .blue.opacity(0.2), radius: 40)
+            .padding(.horizontal, 20)
+            .shadow(color: GlpiColors.universalBlue.opacity(0.1), radius: 30)
             .transition(.scale(scale: 0.9).combined(with: .opacity))
         }
         .zIndex(10)
@@ -311,11 +319,17 @@ struct UsersListView: View {
     private func filterMenuItem(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
-                Text(title).font(.amiko(size: 14, weight: isSelected ? .bold : .regular))
+                Text(title.uppercased())
+                    .font(.amiko(size: 14, weight: isSelected ? .black : .bold))
+                    .foregroundColor(isSelected ? GlpiColors.universalBlue : GlpiColors.dynamicText)
                 Spacer()
-                if isSelected { Image(systemName: "checkmark").foregroundColor(.blue) }
+                if isSelected { 
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 14, weight: .bold))
+                        .foregroundColor(GlpiColors.universalBlue) 
+                }
             }
-            .foregroundColor(.white).padding(16)
+            .padding(20)
         }
     }
 }
@@ -325,9 +339,9 @@ struct UserRow: View {
     
     private var profileColor: Color {
         switch user.profile {
-        case "Super-Admin": return .red
+        case "Super-Admin": return GlpiColors.deleteRed
         case "Admin": return .orange
-        case "Technician": return .blue
+        case "Technician": return GlpiColors.universalBlue
         case "Supervisor": return .purple
         default: return .green
         }
@@ -335,39 +349,39 @@ struct UserRow: View {
     
     var body: some View {
         HStack(spacing: 15) {
-            // Avatar
+            // Avatar Circular Premium
             ZStack {
                 Circle()
-                    .fill(profileColor.opacity(0.2))
+                    .fill(profileColor.opacity(0.1))
                     .frame(width: 50, height: 50)
                 
                 Text(String(user.name.prefix(1)))
-                    .font(.amiko(size: 20, weight: .bold))
+                    .font(.amiko(size: 20, weight: .black))
                     .foregroundColor(profileColor)
             }
             
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(user.name)
-                    .font(.amiko(size: 16, weight: .bold))
-                    .foregroundColor(.white)
+                    .font(.amiko(size: 16, weight: .black))
+                    .foregroundColor(GlpiColors.dynamicText)
                 
-                Text(user.email)
-                    .font(.amiko(size: 13))
-                    .foregroundColor(.white.opacity(0.6))
+                Text(user.email.lowercased())
+                    .font(.amiko(size: 12))
+                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
             }
             
             Spacer()
             
-            // Profile Badge
+            // Perfil com Badge Estilizado
             Text(user.profile.uppercased())
-                .font(.amiko(size: 10, weight: .bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(profileColor.opacity(0.2))
+                .font(.amiko(size: 9, weight: .black))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(profileColor.opacity(0.1))
                 .foregroundColor(profileColor)
-                .cornerRadius(6)
+                .clipShape(Capsule())
         }
-        .padding(.horizontal, 15)
+        .padding(.horizontal, 16)
     }
 }
 

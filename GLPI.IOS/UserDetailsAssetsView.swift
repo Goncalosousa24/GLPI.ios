@@ -45,11 +45,11 @@ struct UserDetailsAssetsView: View {
                         VStack(spacing: 12) {
                             ZStack {
                                 Circle()
-                                    .fill(Color.blue.opacity(0.1))
+                                    .fill(GlpiColors.universalBlue.opacity(0.1))
                                     .frame(width: 70, height: 70)
                                 Image(systemName: "person.fill")
                                     .font(.system(size: 30))
-                                    .foregroundColor(.blue)
+                                    .foregroundColor(GlpiColors.universalBlue)
                             }
                             
                             Text("\(assets.count) ATIVOS ASSOCIADOS")
@@ -82,12 +82,12 @@ struct AssetDetailRow: View {
         HStack(spacing: 15) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(GlpiColors.universalBlue.opacity(0.1))
                     .frame(width: 50, height: 50)
                 
                 Image(systemName: asset.icon)
                     .font(.system(size: 20))
-                    .foregroundColor(Color(hexString: "#00BAFF"))
+                    .foregroundColor(GlpiColors.universalBlue)
             }
             
             VStack(alignment: .leading, spacing: 4) {
@@ -117,6 +117,6 @@ struct AssetDetailRow: View {
 
 #Preview {
     UserDetailsAssetsView(userName: "Gonçalo Sousa", assets: [
-        GLPIAsset(name: "MacBook Pro M3", tag: "SN: 8HX9J2L1", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Gonçalo Sousa", location: "DSI")
+        GLPIAsset(name: "MacBook Pro M3", tag: "TAG-402", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Gonçalo Sousa", department: "DSI", serialNumber: "SN-8HX9J2L1")
     ])
 }

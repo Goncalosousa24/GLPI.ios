@@ -25,13 +25,13 @@ enum GLPITab: String, CaseIterable {
     func iconName(isSelected: Bool) -> String {
         switch self {
         case .tickets:
-            return isSelected ? "ticket2" : "ticket"
+            return isSelected ? "ticket" : "ticket2"
         case .inventory:
             return isSelected ? "shippingbox.fill" : "shippingbox"
         case .agenda:
-            return isSelected ? "agenda2" : "agenda1"
+            return isSelected ? "agenda" : "agenda2"
         case .profile:
-            return isSelected ? "pessoa2" : "pessoa"
+            return isSelected ? "pessoa" : "pessoa2"
         }
     }
 }
@@ -55,15 +55,14 @@ struct FloatingTabBar: View {
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: 26, height: 26)
-                                    .foregroundColor(selectedTab == tab ? .white : .white.opacity(0.4))
-                                    .shadow(color: selectedTab == tab ? .white.opacity(0.8) : .clear, radius: 15)
+                                    .foregroundColor(.white.opacity(selectedTab == tab ? 1.0 : 0.5))
                             } else {
                                 Image(tab.iconName(isSelected: selectedTab == tab))
+                                    .renderingMode(.template)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: tab == .agenda ? 23 : 26, height: tab == .agenda ? 23 : 26)
-                                    .foregroundColor(selectedTab == tab ? .white : .white.opacity(0.4))
-                                    .shadow(color: selectedTab == tab ? .white.opacity(0.8) : .clear, radius: 15)
+                                    .frame(width: 26, height: 26)
+                                    .foregroundColor(.white.opacity(selectedTab == tab ? 1.0 : 0.5))
                             }
                         }
                     }
@@ -72,7 +71,6 @@ struct FloatingTabBar: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
         .frame(height: 70)
         .tabBarGlassStyle()
         .padding(.horizontal, 16)

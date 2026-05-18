@@ -113,8 +113,9 @@ class GLPIService {
         }
         
         // 3. Garantir que temos pelo menos um critério se nada for passado
+        // Por padrão, mostramos todos os tickets exceto os da reciclagem (Status 6)
         if criteriaIndex == 0 {
-            urlString += "&criteria[0][field]=2&criteria[0][searchtype]=morethan&criteria[0][value]=0"
+            urlString += "&criteria[0][field]=12&criteria[0][searchtype]=notequals&criteria[0][value]=6"
             criteriaIndex += 1
         }
         
@@ -219,6 +220,7 @@ class GLPIService {
                 id: "#\(idStr)",
                 name: title,
                 requester: requester,
+                author: formatarNome(fieldId: "22") ?? requester,
                 assignedTo: assigned,
                 description: desc,
                 date: date.toDate() ?? Date(),
@@ -303,11 +305,11 @@ class GLPIService {
                     "totalcount": \(count),
                     "count": 5,
                     "data": [
-                        {"2": "101", "1": "Falha na rede Wi-Fi", "12": "1", "3": "5", "19": "2026-04-30 09:30:00", "4": "Gonçalo Sousa", "21": "Não consigo conectar no 3º andar."},
-                        {"2": "102", "1": "Configuração de novo iPhone", "12": "2", "3": "3", "19": "2026-04-30 10:15:00", "4": "Beatriz Silva", "5": "Suporte Técnico", "21": "Migração de dados pendente."},
-                        {"2": "103", "1": "Teclado MacBook pro com teclas presas", "12": "4", "3": "2", "19": "2026-04-30 11:00:00", "4": "Carlos Mendes", "5": "Manutenção", "21": "Teclas A e S não respondem."},
-                        {"2": "104", "1": "Pedido de software Adobe", "12": "5", "3": "4", "19": "2026-04-29 16:45:00", "4": "Diana Rose", "5": "Admin", "21": "Instalação do Photoshop solicitada."},
-                        {"2": "105", "1": "Erro ao imprimir em PDF", "12": "1", "3": "3", "19": "2026-04-30 12:00:00", "4": "Eduardo Lima", "21": "O driver parece estar corrompido."}
+                        {"2": "101", "1": "Falha na rede Wi-Fi", "12": "1", "3": "5", "19": "2026-04-30 09:30:00", "4": "Gonçalo Sousa", "22": "Admin", "21": "Não consigo conectar no 3º andar."},
+                        {"2": "102", "1": "Configuração de novo iPhone", "12": "2", "3": "3", "19": "2026-04-30 10:15:00", "4": "Beatriz Silva", "22": "Suporte Técnico", "5": "Suporte Técnico", "21": "Migração de dados pendente."},
+                        {"2": "103", "1": "Teclado MacBook pro com teclas presas", "12": "4", "3": "2", "19": "2026-04-30 11:00:00", "4": "Carlos Mendes", "22": "Admin", "5": "Manutenção", "21": "Teclas A e S não respondem."},
+                        {"2": "104", "1": "Pedido de software Adobe", "12": "5", "3": "4", "19": "2026-04-29 16:45:00", "4": "Diana Rose", "22": "Admin", "5": "Admin", "21": "Instalação do Photoshop solicitada."},
+                        {"2": "105", "1": "Erro ao imprimir em PDF", "12": "1", "3": "3", "19": "2026-04-30 12:00:00", "4": "Pedro Alves", "22": "Eduardo Lima", "21": "O driver parece estar corrompido."}
                     ]
                 }
                 """

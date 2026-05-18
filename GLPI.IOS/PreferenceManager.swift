@@ -6,11 +6,12 @@
 //
 
 import Foundation
+import WidgetKit
 
 class PreferenceManager {
     static let shared = PreferenceManager()
     
-    private let defaults = UserDefaults.standard
+    private let defaults = UserDefaults(suiteName: "group.trabalho.GLPI-IOS") ?? UserDefaults.standard
     
     private enum Keys {
         static let baseURL = "base_url"
@@ -21,6 +22,22 @@ class PreferenceManager {
         static let userProfile = "cached_user_profile"
         static let userId = "authenticated_user_id"
         static let isOfflineMode = "is_offline_mode"
+        
+        // --- Widget Data ---
+        static let latestTicketTitle = "widget_ticket_title"
+        static let latestTicketDesc = "widget_ticket_desc"
+        static let latestTicketId = "widget_ticket_id"
+        static let latestTicketTime = "widget_ticket_time"
+    }
+    
+    func updateWidgetData(title: String, desc: String, id: String, time: String) {
+        defaults.set(title, forKey: Keys.latestTicketTitle)
+        defaults.set(desc, forKey: Keys.latestTicketDesc)
+        defaults.set(id, forKey: Keys.latestTicketId)
+        defaults.set(time, forKey: Keys.latestTicketTime)
+        
+        // Forçar atualização do Widget
+        WidgetCenter.shared.reloadAllTimelines()
     }
     
     // --- Configurações do Servidor ---

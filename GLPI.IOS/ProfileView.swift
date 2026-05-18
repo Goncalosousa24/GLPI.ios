@@ -3,29 +3,36 @@ import SwiftUI
 struct ProfileView: View {
     @Binding var isLoggedIn: Bool
     @State private var isAnimating = false
+    @AppStorage("isLightMode_V2") var isLightMode: Bool = true
+    
+    private var isDarkMode: Binding<Bool> {
+        Binding(
+            get: { !isLightMode },
+            set: { isLightMode = !$0 }
+        )
+    }
     
     var body: some View {
         ZStack {
-            GlpiColors.premiumBackground.ignoresSafeArea()
+            GlpiColors.background.ignoresSafeArea()
             
-            VStack(spacing: 0) {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 30) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 30) {
                         Spacer(minLength: 60)
-                        ScrollOffsetTracker()
+                        
                         // MARK: - User Info
                         VStack(spacing: 8) {
                             // Animated Profile Icon
                             ZStack {
                                 Circle()
-                                    .fill(Color.blue.opacity(0.15))
+                                    .fill(GlpiColors.universalBlue.opacity(0.15))
                                     .frame(width: 110, height: 110)
                                     .scaleEffect(isAnimating ? 1.0 : 0.5)
                                     .blur(radius: isAnimating ? 0 : 10)
                                 
                                 Image(systemName: "person.crop.circle.fill.badge.checkmark")
                                     .symbolRenderingMode(.palette)
-                                    .foregroundStyle(.white, .blue)
+                                    .foregroundStyle(.white, GlpiColors.universalBlue)
                                     .font(.system(size: 90))
                                     .opacity(isAnimating ? 1 : 0)
                                     .scaleEffect(isAnimating ? 1 : 0.8)
@@ -33,10 +40,10 @@ struct ProfileView: View {
                             }
                             .padding(.bottom, 15)
                             .animation(.spring(response: 1.2, dampingFraction: 0.7).delay(0.5), value: isAnimating)
-
+                            
                             Text("Gonçalo Sousa")
                                 .font(.inconsolata(size: 26, weight: .bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(GlpiColors.dynamicText)
                         }
                         
                         // MARK: - Stats (Devices & Monthly Tickets)
@@ -53,11 +60,13 @@ struct ProfileView: View {
                             ProfileInfoRow(title: "Email", value: "goncalo@glpi.com", icon: "envelope.fill")
                             
                             Divider()
-                                .background(Color.white.opacity(0.1))
+                                .background(GlpiColors.dynamicText.opacity(0.05))
                                 .padding(.vertical, 15)
                             
                             // App Options
                             VStack(spacing: 12) {
+                                ProfileMenuButton(title: "Modo Escuro", icon: "moon.fill", hasToggle: true, toggleValue: isDarkMode)
+                                
                                 NavigationLink(destination: UsersListView()) {
                                     ProfileMenuButton(title: "Utilizadores", icon: "person.2.fill")
                                 }
@@ -96,18 +105,20 @@ struct ProfileView: View {
                         .padding(.horizontal, 40)
                         .padding(.top, 20)
                         
-                        Spacer(minLength: 120)
+                        Spacer(minLength: 20)
                     }
                 }
             }
+            .id(isLightMode)
+            .animation(.easeInOut(duration: 0.3), value: isLightMode)
+            .navigationBarHidden(true)
+            .frame(width: UIScreen.main.bounds.width)
+            .clipped()
+            .tint(GlpiColors.dynamicText)
+            .onAppear {
+                isAnimating = true
+            }
         }
-        .ignoresSafeArea(.all, edges: .bottom)
-        .preferredColorScheme(.dark)
-        .tint(.white)
-        .onAppear {
-            isAnimating = true
-        }
-    }
 }
 
 struct ProfileStatCard: View {
@@ -117,12 +128,12 @@ struct ProfileStatCard: View {
     var body: some View {
         VStack(spacing: 8) {
             Text(value)
-                .font(.amiko(size: 28, weight: .bold))
-                .foregroundColor(.white)
+                .font(.system(size: 34, weight: .heavy, design: .rounded))
+                .foregroundColor(GlpiColors.universalBlue)
             
             Text(title)
                 .font(.amiko(size: 11, weight: .bold))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 25)
@@ -146,23 +157,23 @@ struct ProfileMenuButton: View {
     var body: some View {
         HStack {
             Image(systemName: icon)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(GlpiColors.universalBlue)
                 .frame(width: 24)
             
             Text(title)
                 .font(.amiko(size: 15))
-                .foregroundColor(.white)
+                .foregroundColor(GlpiColors.dynamicText)
             
             Spacer()
             
             if hasToggle {
                 Toggle("", isOn: $toggleValue)
                     .labelsHidden()
-                    .tint(.blue)
+                    .tint(GlpiColors.universalBlue)
             } else {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(GlpiColors.dynamicText.opacity(0.3))
             }
         }
         .padding(.vertical, 5)
@@ -177,18 +188,18 @@ struct ProfileInfoRow: View {
     var body: some View {
         HStack {
             Image(systemName: icon)
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(GlpiColors.universalBlue)
                 .frame(width: 24)
             
             Text(title)
                 .font(.amiko(size: 15))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(GlpiColors.dynamicText.opacity(0.6))
             
             Spacer()
             
             Text(value)
                 .font(.amiko(size: 14))
-                .foregroundColor(.white)
+                .foregroundColor(GlpiColors.dynamicText)
         }
         .padding(.vertical, 8)
     }

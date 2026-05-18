@@ -12,6 +12,7 @@ struct GLPI_IOSApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .tint(GlpiColors.universalBlue)
         }
     }
 }

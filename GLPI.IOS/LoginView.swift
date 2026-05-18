@@ -10,7 +10,7 @@ import Combine
 
 struct LoginView: View {
     @Binding var isLoggedIn: Bool
-    @AppStorage("isLightMode") var isLightMode: Bool = false
+    @AppStorage("isLightMode_V2") var isLightMode: Bool = true
     
     @State private var username = ""
     @State private var password = ""
@@ -23,50 +23,71 @@ struct LoginView: View {
             
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    Spacer()
+                    Spacer(minLength: 80)
                     
-                    VStack(spacing: 35) {
-                        VStack(spacing: 12) {
-                            Text("GLPI")
-                                .font(.amiko(size: 48, weight: .bold)) // Bigger logo for better centering impact
-                                .foregroundColor(isLightMode ? .black : .white)
-                            
-                            Text("Gestão de TI na palma da mão")
-                                .font(.amiko(size: 16))
-                                .foregroundColor(isLightMode ? .black.opacity(0.7) : .white.opacity(0.7))
+                    VStack(spacing: 45) {
+                        // LOGO OFICIAL (Adaptativo ao Modo Claro/Escuro)
+                        VStack(spacing: 0) {
+                            Image("logoapp")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 140, height: 140)
                         }
                         
                         if let error = errorMessage {
                             Text(error)
-                                .font(.amiko(size: 14))
+                                .font(.amiko(size: 14, weight: .bold))
                                 .foregroundColor(.red)
                                 .multilineTextAlignment(.center)
                                 .padding(.horizontal)
+                                .transition(.move(edge: .top).combined(with: .opacity))
                         }
+                        
+                        VStack(spacing: 16) {
+                            GLPITextField(icon: "pessoa2", placeholder: "Utilizador", text: $username, isSystemIcon: false, activeIcon: "pessoa")
+                            GLPITextField(icon: "lock", placeholder: "Palavra-passe", text: $password, isSecure: true, activeIcon: "lock.fill")
+                        }
+                        .padding(.horizontal, 8)
                         
                         VStack(spacing: 20) {
-                            GLPITextField(icon: "person.fill", placeholder: "Utilizador", text: $username)
-                            GLPITextField(icon: "lock.fill", placeholder: "Palavra-passe", text: $password, isSecure: true)
-                        }
-                        
-                        VStack(spacing: 15) {
-                            GLPIButton(title: "ENTRAR", action: {
-                                performRealLogin()
-                            }, isLoading: isLoading)
+                            let isFormValid = !username.isEmpty && !password.isEmpty
                             
-                            Button(action: { /* Esqueci-me da pass */ }) {
-                                Text("Esqueceu a palavra-passe?")
-                                    .font(.amiko(size: 14))
-                                    .foregroundColor(isLightMode ? .black.opacity(0.5) : .white.opacity(0.5))
+                            Button(action: {
+                                hideKeyboard()
+                                performRealLogin()
+                            }) {
+                                ZStack {
+                                    if isLoading {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                    } else {
+                                        Text("ENTRAR")
+                                            .font(.amiko(size: 16, weight: .black))
+                                            .foregroundColor(.white)
+                                            .tracking(1)
+                                    }
+                                }
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 56)
+                                .background(
+                                    isFormValid ? 
+                                    AnyView(GlpiColors.universalBlue) : 
+                                    AnyView(GlpiColors.universalBlue.opacity(0.3))
+                                )
+                                .cornerRadius(16)
+                                .shadow(color: isFormValid ? GlpiColors.universalBlue.opacity(0.4) : Color.clear, radius: 15, x: 0, y: 8)
                             }
+                            .disabled(!isFormValid || isLoading)
+                            .animation(.spring(), value: isFormValid)
                         }
                     }
-                    .padding(.horizontal, 16)
+                    .padding(.horizontal, 24)
                     
                     Spacer()
                 }
                 .frame(minHeight: UIScreen.screenHeight)
             }
+            .universalBackgroundDismiss { hideKeyboard() }
         }
         .ignoresSafeArea()
         .preferredColorScheme(isLightMode ? .light : .dark)

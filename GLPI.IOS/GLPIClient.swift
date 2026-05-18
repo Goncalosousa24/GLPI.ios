@@ -135,8 +135,8 @@ class GLPIClient {
         if PreferenceManager.shared.isOfflineMode {
             // Mock de tickets resolvidos
             let mockTickets = [
-                GLPITicket(id: "201", name: "Monitor substituído", requester: "Alice", assignedTo: "Eu", description: "Feito", date: Date(), priority: .medium, status: .resolved, isMine: true, isAssignedToMe: true),
-                GLPITicket(id: "202", name: "Teclado trocado", requester: "Bob", assignedTo: "Eu", description: "Feito", date: Date(), priority: .low, status: .resolved, isMine: true, isAssignedToMe: true)
+                GLPITicket(id: "201", name: "Monitor substituído", requester: "Alice", author: "Admin", assignedTo: "Eu", description: "Feito", date: Date(), priority: .medium, status: .resolved, isMine: true, isAssignedToMe: true),
+                GLPITicket(id: "202", name: "Teclado trocado", requester: "Bob", author: "Admin", assignedTo: "Eu", description: "Feito", date: Date(), priority: .low, status: .resolved, isMine: true, isAssignedToMe: true)
             ]
             return (mockTickets, mockTickets.count)
         }
@@ -199,7 +199,7 @@ class GLPIClient {
         if PreferenceManager.shared.isOfflineMode {
             // Mock de tickets prioritários
             let mockTickets = [
-                GLPITicket(id: "301", name: "Servidor Down", requester: "Admin", assignedTo: "Pendente", description: "Urgente", date: Date(), priority: .major, status: .new, isMine: false, isAssignedToMe: false)
+                GLPITicket(id: "301", name: "Servidor Down", requester: "Admin", author: "Admin", assignedTo: "Pendente", description: "Urgente", date: Date(), priority: .major, status: .new, isMine: false, isAssignedToMe: false)
             ]
             return (mockTickets, mockTickets.count)
         }
@@ -212,5 +212,52 @@ class GLPIClient {
         let response = try JSONDecoder().decode(TicketListResponse.self, from: data)
         let mapped = GLPIService.shared.mapToTickets(response.data ?? [])
         return (mapped, response.totalInt)
+    }
+    
+    /// Pesquisa genérica para ATUALIZAÇÕES e outros fins
+    func searchTickets(range: String, sort: String = "19", order: String = "DESC") async throws -> TicketListResponse {
+        let cleanBaseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
+        let query = "forcedisplay[0]=1&forcedisplay[1]=2&forcedisplay[2]=12&forcedisplay[3]=15&forcedisplay[4]=19&forcedisplay[5]=4&forcedisplay[6]=5&forcedisplay[7]=17&forcedisplay[8]=3&sort=\(sort)&order=\(order)&expand_dropdowns=true&range=\(range)"
+        
+        let encodedQuery = query.replacingOccurrences(of: "[", with: "%5B").replacingOccurrences(of: "]", with: "%5D").replacingOccurrences(of: " ", with: "%20")
+        let fullURLString = "\(cleanBaseURL)/apirest.php/search/Ticket?\(encodedQuery)"
+        
+        guard let url = URL(string: fullURLString) else { throw URLError(.badURL) }
+        
+        if PreferenceManager.shared.isOfflineMode {
+            // Mock de tickets para ATUALIZAÇÕES (Sincronizado com DashboardViewModel)
+            let page1: [[String: AnyCodable]] = [
+                ["2": AnyCodable("101"), "1": AnyCodable("Falha na rede Wi-Fi"), "4": AnyCodable("Gonçalo Sousa"), "22": AnyCodable("Admin"), "5": AnyCodable("Suporte Técnico"), "15": AnyCodable("2026-05-15 10:00:00"), "19": AnyCodable("2026-05-15 10:00:00"), "12": AnyCodable(1), "3": AnyCodable(4), "21": AnyCodable("Não consigo conectar no 3º andar.")],
+                ["2": AnyCodable("102"), "1": AnyCodable("Configuração de novo iPhone"), "4": AnyCodable("Maria Silva"), "22": AnyCodable("Suporte"), "5": AnyCodable("Redes"), "15": AnyCodable("2026-05-15 09:30:00"), "19": AnyCodable("2026-05-15 09:30:00"), "12": AnyCodable(2), "3": AnyCodable(3), "21": AnyCodable("Migração de dados pendente.")],
+                ["2": AnyCodable("103"), "1": AnyCodable("Teclado MacBook pro"), "4": AnyCodable("João Mendes"), "22": AnyCodable("Admin"), "5": AnyCodable("Manutenção"), "15": AnyCodable("2026-05-15 09:00:00"), "19": AnyCodable("2026-05-15 09:00:00"), "12": AnyCodable(1), "3": AnyCodable(2), "21": AnyCodable("Teclas A e S não respondem.")]
+            ]
+            
+            let page2: [[String: AnyCodable]] = [
+                ["2": AnyCodable("104"), "1": AnyCodable("Pedido de software Adobe"), "4": AnyCodable("Ana Costa"), "22": AnyCodable("Admin"), "5": AnyCodable("Admin"), "15": AnyCodable("2026-05-14 16:00:00"), "19": AnyCodable("2026-05-14 16:00:00"), "12": AnyCodable(5), "3": AnyCodable(3), "21": AnyCodable("Instalação do Photoshop solicitada.")],
+                ["2": AnyCodable("105"), "1": AnyCodable("Erro ao imprimir em PDF"), "4": AnyCodable("Pedro Alves"), "22": AnyCodable("Eduardo Lima"), "5": AnyCodable("Suporte"), "15": AnyCodable("2026-05-14 15:30:00"), "19": AnyCodable("2026-05-14 15:30:00"), "12": AnyCodable(1), "3": AnyCodable(2), "21": AnyCodable("O driver parece estar corrompido.")],
+                ["2": AnyCodable("106"), "1": AnyCodable("Monitor com riscas"), "4": AnyCodable("Sónia Luz"), "22": AnyCodable("Suporte"), "5": AnyCodable("Logística"), "15": AnyCodable("2026-05-14 14:00:00"), "19": AnyCodable("2026-05-14 14:00:00"), "12": AnyCodable(1), "3": AnyCodable(5), "21": AnyCodable("Monitor LG parou de dar imagem.")]
+            ]
+            
+            let page3: [[String: AnyCodable]] = [
+                ["2": AnyCodable("107"), "1": AnyCodable("Acesso VPN Falhou"), "4": AnyCodable("Rui Santos"), "5": AnyCodable("Redes"), "15": AnyCodable("2026-05-14 11:00:00"), "19": AnyCodable("2026-05-14 11:00:00"), "12": AnyCodable(1), "3": AnyCodable(5), "21": AnyCodable("Utilizador não consegue autenticar.")],
+                ["2": AnyCodable("108"), "1": AnyCodable("Substituição de Toner"), "4": AnyCodable("Carla Dias"), "5": AnyCodable("Admin"), "15": AnyCodable("2026-05-14 10:30:00"), "19": AnyCodable("2026-05-14 10:30:00"), "12": AnyCodable(2), "3": AnyCodable(2), "21": AnyCodable("Impressora do RH sem tinta.")],
+                ["2": AnyCodable("109"), "1": AnyCodable("Atualização de Segurança"), "4": AnyCodable("Nuno Lima"), "5": AnyCodable("Segurança"), "15": AnyCodable("2026-05-14 09:00:00"), "19": AnyCodable("2026-05-14 09:00:00"), "12": AnyCodable(1), "3": AnyCodable(4), "21": AnyCodable("Patch de Maio necessário.")]
+            ]
+            
+            let selectedData: [[String: AnyCodable]]
+            if range.starts(with: "0-") { selectedData = page1 }
+            else if range.starts(with: "3-") { selectedData = page2 }
+            else if range.starts(with: "6-") { selectedData = page3 }
+            else { selectedData = page1 }
+            
+            return TicketListResponse(totalcount: 9, count: 3, data: selectedData)
+        }
+        
+        var request = URLRequest(url: url)
+        request.addValue(sessionToken, forHTTPHeaderField: "Session-Token")
+        request.addValue(appToken, forHTTPHeaderField: "App-Token")
+        
+        let (data, _) = try await URLSession.shared.data(for: request)
+        return try JSONDecoder().decode(TicketListResponse.self, from: data)
     }
 }

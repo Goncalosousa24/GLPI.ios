@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AssetCreateView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("isLightMode_V2") var isLightMode: Bool = true
     
     // Estados para criação do dispositivo
     @State private var deviceName: String = ""
@@ -10,6 +11,13 @@ struct AssetCreateView: View {
     @State private var assignedTo: String = ""
     @State private var status: String = ""
     @State private var serialNumber: String = ""
+    @State private var showScanner: Bool = false
+    
+    // Foco para bordas azuis
+    enum Field: Hashable {
+        case name, sn
+    }
+    @FocusState private var focusedField: Field?
     
     // Estados de expansão
     @State private var isTypeExpanded: Bool = false
@@ -60,76 +68,45 @@ struct AssetCreateView: View {
     
     var body: some View {
         ZStack {
-            // Fundo Premium
             GlpiColors.premiumBackground.ignoresSafeArea()
-            
-            // Camada de fecho (Só ativa se algo estiver aberto)
-            if isTypeExpanded || isLocationExpanded || isAssigneeExpanded || isStatusExpanded {
-                Color.black.opacity(0.01)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        hideKeyboard()
-                        withAnimation {
-                            isTypeExpanded = false
-                            isLocationExpanded = false
-                            isAssigneeExpanded = false
-                            isStatusExpanded = false
-                        }
+                .universalBackgroundDismiss {
+                    withAnimation(.spring()) {
+                        closeOtherPickers(except: "")
+                        focusedField = nil
                     }
-            }
+                }
             
             VStack(spacing: 0) {
-                // Header (Botão fechar)
-                HStack {
-                    Button(action: { dismiss() }) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundColor(.white.opacity(0.6))
-                            .padding(12)
-                            .glassStyle(cornerRadius: 18)
-                    }
-                    Spacer()
-                    Spacer()
-                    Spacer()
-                    Color.clear.frame(width: 44, height: 44)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 60)
+                headerView
                 
-                ScrollView(showsIndicators: true) {
+                ScrollView(showsIndicators: false) {
                     VStack(spacing: 25) {
                         
                         // 1. NOME DO DISPOSITIVO
-                        HStack(spacing: 15) {
-                            Image(systemName: "pencil")
-                                .foregroundColor(.white.opacity(0.8))
-                                .font(.system(size: 16))
-                                .frame(width: 24)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("NOME DO DISPOSITIVO")
-                                    .font(.amiko(size: 9, weight: .bold))
-                                    .foregroundColor(.white.opacity(0.8))
-                                
-                                TextField("", text: $deviceName, prompt: Text("").foregroundColor(.white.opacity(0.3)))
-                                    .font(.amiko(size: 15))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(height: 56)
-                        .glassStyle(cornerRadius: 22)
+                        inputField(label: "ESCREVER NOME", text: $deviceName, placeholder: "INSERIR NOME", focus: .name)
                         
-                        // 2. TIPO DE DISPOSITIVO
+                        // 2. NÚMERO DE SÉRIE
+                        inputField(
+                            label: "ESCREVER SN", 
+                            text: $serialNumber, 
+                            placeholder: "INSERIR SN", 
+                            focus: .sn,
+                            rightIcon: "qrcode.viewfinder",
+                            rightIconAction: { showScanner = true }
+                        )
+                        
+                        // 3. TIPO DE DISPOSITIVO
                         VStack(spacing: 8) {
-                            EditFieldCapsule(label: "TIPO DE DISPOSITIVO", value: deviceType, icon: "desktopcomputer") {
+                            EditFieldCapsule(
+                                label: "TIPO DE DISPOSITIVO", 
+                                value: deviceType.isEmpty ? "SELECIONAR" : deviceType, 
+                                icon: "", 
+                                valueColor: deviceType.isEmpty ? GlpiColors.dynamicBlueText : nil,
+                                isSelected: isTypeExpanded
+                            ) {
                                 withAnimation(.spring()) {
                                     isTypeExpanded.toggle()
-                                    if isTypeExpanded {
-                                        isLocationExpanded = false
-                                        isAssigneeExpanded = false
-                                        isStatusExpanded = false
-                                    }
+                                    closeOtherPickers(except: "type")
                                 }
                             }
                             if isTypeExpanded {
@@ -143,20 +120,21 @@ struct AssetCreateView: View {
                                 }
                                 .padding(8)
                                 .glassStyle(cornerRadius: 22)
-                                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                             }
                         }
                         
                         // 3. LOCALIZAÇÃO
                         VStack(spacing: 8) {
-                            EditFieldCapsule(label: "LOCALIZAÇÃO", value: location, icon: "mappin.and.ellipse") {
+                            EditFieldCapsule(
+                                label: "LOCALIZAÇÃO", 
+                                value: location.isEmpty ? "SELECIONAR" : location, 
+                                icon: "", 
+                                valueColor: location.isEmpty ? GlpiColors.dynamicBlueText : nil,
+                                isSelected: isLocationExpanded
+                            ) {
                                 withAnimation(.spring()) {
                                     isLocationExpanded.toggle()
-                                    if isLocationExpanded {
-                                        isTypeExpanded = false
-                                        isAssigneeExpanded = false
-                                        isStatusExpanded = false
-                                    }
+                                    closeOtherPickers(except: "location")
                                 }
                             }
                             if isLocationExpanded {
@@ -166,20 +144,21 @@ struct AssetCreateView: View {
                                     onSelect: { withAnimation { isLocationExpanded = false } }
                                 )
                                 .glassStyle(cornerRadius: 22)
-                                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                             }
                         }
                         
                         // 4. ATRIBUIR A
                         VStack(spacing: 8) {
-                            EditFieldCapsule(label: "ATRIBUIR A", value: assignedTo, icon: "person.fill") {
+                            EditFieldCapsule(
+                                label: "ATRIBUIR A", 
+                                value: assignedTo.isEmpty ? "SELECIONAR" : assignedTo, 
+                                icon: "", 
+                                valueColor: assignedTo.isEmpty ? GlpiColors.dynamicBlueText : nil,
+                                isSelected: isAssigneeExpanded
+                            ) {
                                 withAnimation(.spring()) {
                                     isAssigneeExpanded.toggle()
-                                    if isAssigneeExpanded {
-                                        isTypeExpanded = false
-                                        isLocationExpanded = false
-                                        isStatusExpanded = false
-                                    }
+                                    closeOtherPickers(except: "assignee")
                                 }
                             }
                             if isAssigneeExpanded {
@@ -189,20 +168,21 @@ struct AssetCreateView: View {
                                     onSelect: { withAnimation { isAssigneeExpanded = false } }
                                 )
                                 .glassStyle(cornerRadius: 22)
-                                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                             }
                         }
                         
                         // 5. ESTADO
                         VStack(spacing: 8) {
-                            EditFieldCapsule(label: "ESTADO", value: status, icon: "checkmark.circle.fill") {
+                            EditFieldCapsule(
+                                label: "ESTADO", 
+                                value: status.isEmpty ? "SELECIONAR" : status, 
+                                icon: "", 
+                                valueColor: status.isEmpty ? GlpiColors.dynamicBlueText : nil,
+                                isSelected: isStatusExpanded
+                            ) {
                                 withAnimation(.spring()) {
                                     isStatusExpanded.toggle()
-                                    if isStatusExpanded {
-                                        isTypeExpanded = false
-                                        isLocationExpanded = false
-                                        isAssigneeExpanded = false
-                                    }
+                                    closeOtherPickers(except: "status")
                                 }
                             }
                             if isStatusExpanded {
@@ -212,47 +192,120 @@ struct AssetCreateView: View {
                                     onSelect: { withAnimation { isStatusExpanded = false } }
                                 )
                                 .glassStyle(cornerRadius: 22)
-                                .transition(.asymmetric(insertion: .move(edge: .top).combined(with: .opacity), removal: .opacity))
                             }
                         }
-                        
-                        // 6. NÚMERO DE SÉRIE
-                        HStack(spacing: 15) {
-                            Image(systemName: "number")
-                                .foregroundColor(.white.opacity(0.8))
-                                .font(.system(size: 16))
-                                .frame(width: 24)
-                            
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("NÚMERO DE SÉRIE (SN)")
-                                    .font(.amiko(size: 9, weight: .bold))
-                                    .foregroundColor(.white.opacity(0.8))
-                                
-                                TextField("", text: $serialNumber, prompt: Text("").foregroundColor(.white.opacity(0.3)))
-                                    .font(.amiko(size: 15))
-                                    .foregroundColor(.white)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .frame(height: 56)
-                        .glassStyle(cornerRadius: 22)
                         
                         // BOTÃO CRIAR
-                        Button(action: { dismiss() }) {
-                            Text("CRIAR DISPOSITIVO")
-                                .font(.amiko(size: 14, weight: .bold))
-                                .foregroundColor(.white.opacity(0.8))
-                                .frame(width: 240, height: 52)
-                                .glassStyle(cornerRadius: 22)
-                        }
-                        .padding(.top, 8)
-                        .padding(.bottom, 60)
+                        createButton
                     }
                     .padding(.horizontal, 16)
-                    .padding(.top, 20)
+                    .padding(.top, 10)
                 }
+                .scrollDismissesKeyboard(.immediately)
+                .simultaneousGesture(DragGesture().onChanged { _ in
+                    withAnimation(.spring()) {
+                        closeOtherPickers(except: "")
+                        focusedField = nil
+                    }
+                })
             }
         }
+        .preferredColorScheme(isLightMode ? .light : .dark)
+        .sheet(isPresented: $showScanner) {
+            ScannerView { scannedCode in
+                self.serialNumber = scannedCode
+            }
+        }
+    }
+    
+    // MARK: - Components
+    
+    private var headerView: some View {
+        HStack {
+            Button(action: { dismiss() }) {
+                Image(systemName: GlpiMetrics.universalBackIcon)
+                    .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
+                    .foregroundColor(GlpiColors.dynamicText)
+            }
+            .padding(.leading, GlpiMetrics.padding + 5)
+            
+            Spacer()
+            
+            Text("CRIAR DISPOSITIVO")
+                .font(.amiko(size: 16, weight: .black))
+                .foregroundColor(GlpiColors.dynamicBlueText)
+            
+            Spacer()
+            
+            Color.clear.frame(width: 44, height: 44)
+        }
+        .padding(.top, 5)
+        .frame(height: GlpiMetrics.navAreaHeight - 5)
+    }
+    
+    private func inputField(label: String, text: Binding<String>, placeholder: String, focus: Field, rightIcon: String? = nil, rightIconAction: (() -> Void)? = nil) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(label)
+                .font(.amiko(size: GlpiMetrics.FORM_LABEL_FONT_SIZE, weight: GlpiMetrics.FORM_LABEL_WEIGHT))
+                .foregroundColor(GlpiMetrics.FORM_LABEL_COLOR)
+                .padding(.leading, 5)
+            
+            HStack(spacing: 0) {
+                TextField("", text: text)
+                    .font(.amiko(size: GlpiMetrics.FORM_VALUE_FONT_SIZE, weight: GlpiMetrics.FORM_VALUE_WEIGHT))
+                    .foregroundColor(GlpiColors.dynamicText)
+                    .placeholder(when: text.wrappedValue.isEmpty && focusedField != focus) {
+                        Text(placeholder)
+                            .font(.amiko(size: GlpiMetrics.FORM_VALUE_FONT_SIZE, weight: GlpiMetrics.FORM_VALUE_WEIGHT))
+                            .foregroundColor(GlpiMetrics.FORM_PLACEHOLDER_COLOR)
+                    }
+                    .focused($focusedField, equals: focus)
+                    .tint(GlpiColors.universalBlue)
+                
+                if let icon = rightIcon {
+                    Button(action: {
+                        rightIconAction?()
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }) {
+                        Image(systemName: icon)
+                            .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                            .font(.system(size: 18, weight: .semibold))
+                    }
+                }
+            }
+            .padding(.horizontal, GlpiMetrics.FORM_FIELD_HPADDING)
+            .frame(height: GlpiMetrics.FORM_FIELD_HEIGHT)
+            .glassStyle(cornerRadius: 22, isSelection: focusedField == focus)
+        }
+    }
+    
+    private var createButton: some View {
+        Button(action: {
+            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+            dismiss()
+        }) {
+            Text("CRIAR DISPOSITIVO")
+                .font(.amiko(size: 15, weight: .black))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 60)
+                .background(
+                    Capsule()
+                        .fill(GlpiColors.universalBlue)
+                        .shadow(color: GlpiColors.universalBlue.opacity(0.4), radius: 15, y: 8)
+                )
+        }
+        .padding(.top, 20)
+        .padding(.bottom, 60)
+    }
+    
+    private func closeOtherPickers(except: String) {
+        if except != "type" { isTypeExpanded = false }
+        if except != "location" { isLocationExpanded = false }
+        if except != "assignee" { isAssigneeExpanded = false }
+        if except != "status" { isStatusExpanded = false }
+        
+        hideKeyboard()
     }
 }
 

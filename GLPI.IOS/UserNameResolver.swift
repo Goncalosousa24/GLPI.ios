@@ -14,7 +14,7 @@ actor UserNameResolver {
     /// Resolve o nome de um utilizador ou grupo de forma assíncrona
     func resolve(id: String, baseURL: String, sessionToken: String, appToken: String) async -> String {
         if PreferenceManager.shared.isOfflineMode {
-            return "User #\(id)"
+            return id
         }
         
         let cleanId = id.replacingOccurrences(of: ".0", with: "")

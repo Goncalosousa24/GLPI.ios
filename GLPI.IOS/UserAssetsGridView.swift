@@ -13,14 +13,14 @@ struct UserAssetsGridView: View {
     
     // Mock Assets (Consistentes com InventoryView)
     let mockAssets = [
-        GLPIAsset(name: "MacBook Pro M3 - GS", tag: "SN: 8HX9J2L1", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Gonçalo Sousa", location: "DSI"),
-        GLPIAsset(name: "Monitor Dell UltraSharp", tag: "SN: DL293041", icon: "display", type: .monitor, status: "Ativo", owner: "Gonçalo Sousa", location: "DSI"),
-        GLPIAsset(name: "iMac 24\" - Recepção", tag: "SN: IM-9102", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Ana Martins", location: "Stock"),
-        GLPIAsset(name: "Mac Studio M2 Ultra", tag: "SN: MS-9902", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Ricardo Ferreira", location: "DSI"),
-        GLPIAsset(name: "Dell P2723DE", tag: "SN: DL-1122", icon: "display", type: .monitor, status: "Ativo", owner: "Ana Martins", location: "Stock"),
-        GLPIAsset(name: "Brother MFC-L2710", tag: "SN: BR-4455", icon: "printer.fill", type: .printer, status: "Ativo", owner: "Ricardo Ferreira", location: "DAO"),
-        GLPIAsset(name: "Monitor LG Ergo", tag: "SN: LG-0099", icon: "display", type: .monitor, status: "Ativo", owner: "Duarte Silva", location: "Stock"),
-        GLPIAsset(name: "Zebra ZD421", tag: "SN: ZB-2233", icon: "printer.fill", type: .printer, status: "Ativo", owner: "Duarte Silva", location: "DAO")
+        GLPIAsset(name: "MacBook Pro M3 - GS", tag: "TAG-001", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Gonçalo Sousa", department: "DSI", serialNumber: "8HX9J2L1"),
+        GLPIAsset(name: "Monitor Dell UltraSharp", tag: "TAG-042", icon: "display", type: .monitor, status: "Ativo", owner: "Gonçalo Sousa", department: "DSI", serialNumber: "DL293041"),
+        GLPIAsset(name: "iMac 24\" - Recepção", tag: "TAG-910", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Ana Martins", department: "Stock", serialNumber: "IM-9102"),
+        GLPIAsset(name: "Mac Studio M2 Ultra", tag: "TAG-990", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Ricardo Ferreira", department: "DSI", serialNumber: "MS-9902"),
+        GLPIAsset(name: "Dell P2723DE", tag: "TAG-112", icon: "display", type: .monitor, status: "Ativo", owner: "Ana Martins", department: "Stock", serialNumber: "DL-1122"),
+        GLPIAsset(name: "Brother MFC-L2710", tag: "TAG-445", icon: "printer.fill", type: .printer, status: "Ativo", owner: "Ricardo Ferreira", department: "DAO", serialNumber: "BR-4455"),
+        GLPIAsset(name: "Monitor LG Ergo", tag: "TAG-009", icon: "display", type: .monitor, status: "Ativo", owner: "Duarte Silva", department: "Stock", serialNumber: "LG-0099"),
+        GLPIAsset(name: "Zebra ZD421", tag: "TAG-223", icon: "printer.fill", type: .printer, status: "Ativo", owner: "Duarte Silva", department: "DAO", serialNumber: "ZB-2233")
     ]
     
     var assetsByUser: [String: [GLPIAsset]] {
@@ -62,17 +62,10 @@ struct UserAssetsGridView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 60)
                 
-                // Search
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(.white.opacity(0.4))
-                    TextField("", text: $searchText, prompt: Text("Pesquisar pessoa...").foregroundColor(.white.opacity(0.3)))
-                        .foregroundColor(.white)
-                        .font(.amiko(size: 16))
-                }
-                .padding()
-                .glassStyle(cornerRadius: 15)
-                .padding(.horizontal, 16)
+                GLPISearchHeader(
+                    searchText: $searchText,
+                    placeholder: "Pesquisar pessoa..."
+                )
                 .padding(.top, 20)
                 
                 // Grid
@@ -105,12 +98,12 @@ struct UserCard: View {
         VStack(spacing: 15) {
             ZStack {
                 Circle()
-                    .fill(Color.blue.opacity(0.1))
+                    .fill(GlpiColors.universalBlue.opacity(0.1))
                     .frame(width: 45, height: 45)
                 
                 Image(systemName: "person.fill")
                     .font(.system(size: 20))
-                    .foregroundColor(Color(hexString: "#00BAFF"))
+                    .foregroundColor(GlpiColors.universalBlue)
             }
             
             VStack(spacing: 4) {
