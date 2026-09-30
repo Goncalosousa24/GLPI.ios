@@ -16,6 +16,15 @@ struct TicketCreateView: View {
     @State private var tempoSolucao: String = ""
     @State private var solucaoDate = Date()
     
+    @State private var categoriesList: [String] = ["Geral", "Hardware", "Software", "Rede", "Email"]
+    @State private var categoryMap: [String: String] = [:] // maps category completename -> id
+    
+    @State private var isLoading = false
+    @State private var isSaving = false
+    @State private var showAlert = false
+    @State private var alertMessage = ""
+    @State private var isSuccess = false
+    
     @State private var isTypeExpanded = false
     @State private var isCategoryExpanded = false
     @State private var isSourceExpanded = false
@@ -29,8 +38,7 @@ struct TicketCreateView: View {
     @FocusState private var focusedField: Field?
     
     let ticketTypes = ["Incidente", "Pedido"]
-    let categories = ["Geral", "Hardware", "Software", "Rede", "Email"]
-    let sources = ["App", "Email", "Telefone", "Direto"]
+    let sources = ["Direto", "E-Mail", "Formcreator", "Helpdesk", "Telefone", "Escrito", "Outro"]
     
     var body: some View {
         ZStack {
@@ -49,7 +57,7 @@ struct TicketCreateView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: GlpiMetrics.universalBackIcon)
                             .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
-                            .foregroundColor(GlpiColors.dynamicText)
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
                     .padding(.leading, GlpiMetrics.universalHeaderLeading)
                     
@@ -130,7 +138,7 @@ struct TicketCreateView: View {
                             }
                             if isCategoryExpanded {
                                 ScrollablePickerView(
-                                    options: categories,
+                                    options: categoriesList,
                                     selected: $categoria,
                                     onSelect: { withAnimation { isCategoryExpanded = false } }
                                 )
@@ -158,7 +166,7 @@ struct TicketCreateView: View {
                         
                         // 5. PRIORIDADE (RETÂNGULO DE SELECÇÃO)
                         VStack(spacing: 8) {
-                            EditFieldCapsule(label: "PRIORIDADE", value: prioridade?.rawValue ?? "SELECIONAR", icon: "", valueColor: prioridade == nil ? GlpiColors.dynamicBlueText : prioridade?.color, isSelected: isPriorityExpanded) {
+                            EditFieldCapsule(label: "PRIORIDADE", value: prioridade?.rawValue ?? "SELECIONAR", icon: "", valueColor: prioridade == nil ? GlpiColors.dynamicBlueText : nil, isSelected: isPriorityExpanded) {
                                 withAnimation(.spring()) {
                                     isPriorityExpanded.toggle()
                                     closeOtherPickers(except: "priority")
@@ -306,7 +314,7 @@ struct TicketCreateView: View {
                         // 9. BOTÃO CRIAR TICKET (AZUL UNIVERSAL)
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            dismiss()
+                            criarTicket()
                         }) {
                             Text("CRIAR TICKET")
                                 .font(.amiko(size: 15, weight: .black))
@@ -324,20 +332,50 @@ struct TicketCreateView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            closeOtherPickers(except: "")
+                            hideKeyboard()
+                        }
+                    }
                 }
                 .scrollDismissesKeyboard(.immediately)
-                .simultaneousGesture(DragGesture().onChanged { _ in
-                    withAnimation(.spring()) {
-                        closeOtherPickers(except: "")
-                        focusedField = nil
-                    }
-                })
+            }
+            
+            if isLoading || isSaving {
+                Color.black.opacity(0.4)
+                    .ignoresSafeArea()
+                
+                VStack(spacing: 20) {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .scaleEffect(1.5)
+                    Text(isSaving ? "A criar ticket..." : "A carregar dados...")
+                        .font(.amiko(size: 14, weight: .bold))
+                        .foregroundColor(.white)
+                }
+                .padding(30)
+                .background(Color.black.opacity(0.7))
+                .cornerRadius(20)
             }
         }
         .onTapGesture {
             hideKeyboard()
         }
         .preferredColorScheme(isLightMode ? .light : .dark)
+        .alert(isSuccess ? "SUCESSO" : "ERRO", isPresented: $showAlert) {
+            Button("OK") {
+                if isSuccess {
+                    dismiss()
+                }
+            }
+        } message: {
+            Text(alertMessage)
+        }
+        .onAppear {
+            loadInitialData()
+        }
     }
     
     private func closeOtherPickers(except: String) {
@@ -366,6 +404,137 @@ struct TicketCreateView: View {
         formatter.locale = Locale(identifier: "pt_PT")
         formatter.dateFormat = "dd/MM/yyyy HH:mm"
         tempoSolucao = formatter.string(from: date)
+    }
+    
+    private func loadInitialData() {
+        isLoading = true
+        Task {
+            do {
+                let cats = try await GLPIClient.shared.getITILCategories()
+                var newCats: [String] = []
+                var newMap: [String: String] = [:]
+                for cat in cats {
+                    if let id = cat["id"] as? Int ?? (cat["id"] as? String).flatMap(Int.init),
+                       let nameRaw = cat["completename"] as? String ?? cat["name"] as? String {
+                        let name = GlpiHtmlFixer.unescapeHtml(nameRaw)
+                        newCats.append(name)
+                        newMap[name] = String(id)
+                    }
+                }
+                await MainActor.run {
+                    self.isLoading = false
+                    if !newCats.isEmpty {
+                        self.categoriesList = newCats.sorted()
+                        self.categoryMap = newMap
+                    }
+                }
+            } catch {
+                print("Erro ao carregar categorias: \(error)")
+                await MainActor.run {
+                    self.isLoading = false
+                }
+            }
+        }
+    }
+    
+    private func formatDisplayToGLPIDate(_ str: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.dateFormat = "dd/MM/yyyy HH:mm"
+        guard let date = formatter.date(from: str) else { return "" }
+        
+        let glpiFormatter = DateFormatter()
+        glpiFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        glpiFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        glpiFormatter.locale = Locale(identifier: "en_US_POSIX")
+        return glpiFormatter.string(from: date)
+    }
+    
+    private func criarTicket() {
+        let assuntoTrimmed = assunto.trimmingCharacters(in: .whitespacesAndNewlines)
+        let descricaoTrimmed = descricao.trimmingCharacters(in: .whitespacesAndNewlines)
+        if assuntoTrimmed.isEmpty || descricaoTrimmed.isEmpty {
+            alertMessage = "Por favor, preencha o assunto e a descrição detalhada."
+            isSuccess = false
+            showAlert = true
+            return
+        }
+        
+        isSaving = true
+        Task {
+            do {
+                let selectedType = (tipo == "Pedido") ? 2 : 1
+                
+                let selectedSourceId: Int
+                switch fonte {
+                case "Helpdesk": selectedSourceId = 1
+                case "E-Mail": selectedSourceId = 2
+                case "Telefone": selectedSourceId = 3
+                case "Direto": selectedSourceId = 4
+                case "Escrito": selectedSourceId = 5
+                case "Outro": selectedSourceId = 6
+                case "Formcreator": selectedSourceId = 7
+                default: selectedSourceId = 4
+                }
+                
+                let selectedPriorityId: Int
+                switch prioridade {
+                case .veryLow: selectedPriorityId = 1
+                case .low: selectedPriorityId = 2
+                case .medium: selectedPriorityId = 3
+                case .high: selectedPriorityId = 4
+                case .veryHigh: selectedPriorityId = 5
+                case .major: selectedPriorityId = 6
+                default: selectedPriorityId = 3
+                }
+                
+                var input: [String: Any] = [
+                    "name": assuntoTrimmed,
+                    "content": descricaoTrimmed,
+                    "status": 1, // Novo
+                    "type": selectedType,
+                    "requesttypes_id": selectedSourceId,
+                    "priority": selectedPriorityId
+                ]
+                
+                if let catId = categoryMap[categoria] {
+                    input["itilcategories_id"] = catId
+                }
+                
+                if !tempoAtendimento.isEmpty {
+                    input["time_to_own"] = formatDisplayToGLPIDate(tempoAtendimento)
+                }
+                
+                if !tempoSolucao.isEmpty {
+                    input["time_to_resolve"] = formatDisplayToGLPIDate(tempoSolucao)
+                }
+                
+                let createdId = try await GLPIClient.shared.createTicket(input: input)
+                
+                await MainActor.run {
+                    self.isSaving = false
+                    if createdId != nil {
+                        self.isSuccess = true
+                        self.alertMessage = "Ticket criado com sucesso!"
+                        self.showAlert = true
+                        
+                        NotificationCenter.default.post(name: NSNotification.Name("TicketUpdated"), object: nil)
+                    } else {
+                        self.isSuccess = false
+                        self.alertMessage = "Não foi possível criar o ticket no servidor."
+                        self.showAlert = true
+                    }
+                }
+            } catch {
+                print("Erro ao criar ticket: \(error)")
+                await MainActor.run {
+                    self.isSaving = false
+                    self.isSuccess = false
+                    self.alertMessage = error.localizedDescription
+                    self.showAlert = true
+                }
+            }
+        }
     }
 }
 

@@ -2,7 +2,7 @@
 //  LoginService.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 17/04/2026.
+//  Created by Gonçalo Sousa on 17/04/2026.
 //
 
 import Foundation

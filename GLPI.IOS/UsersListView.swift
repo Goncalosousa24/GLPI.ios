@@ -2,7 +2,7 @@
 //  UsersListView.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 27/04/2026.
+//  Created by Gonçalo Sousa on 27/04/2026.
 //
 
 import SwiftUI
@@ -13,9 +13,9 @@ struct UsersListView: View {
     @State var selectedFilter: String? = nil
     @State var currentPage = 1
     @State var filterPageIndex = 0
-    @State var showFilterMenu = false
+    @State var isLoading = true
     
-    let filters = ["Admin", "Hotliner", "Observer", "Read-Only", "Super-Admin", "Supervisor", "Technician"]
+    @State var filters = ["Admin", "Hotliner", "Observer", "Read-Only", "Super-Admin", "Supervisor", "Technician"]
     
     private var pillWidth: CGFloat {
         let screenWidth = UIScreen.screenWidth
@@ -26,35 +26,54 @@ struct UsersListView: View {
     }
     
     private var currentFilters: [String] {
+        if filters.isEmpty { return [] }
         let chunkSize = 2
         let start = filterPageIndex * chunkSize
         let end = min(start + chunkSize, filters.count)
+        if start >= filters.count { return [] }
         return Array(filters[start..<end])
     }
     
     private var totalFilterPages: Int {
-        Int(ceil(Double(filters.count) / 2.0))
+        max(1, Int(ceil(Double(filters.count) / 2.0)))
     }
     
-    @State var users: [GLPIUser] = [
-        GLPIUser(name: "Gonçalo Sousa", email: "goncalo@glpi.com", profile: "Super-Admin"),
-        GLPIUser(name: "Ana Martins", email: "ana.martins@glpi.com", profile: "Admin"),
-        GLPIUser(name: "Ricardo Silva", email: "ricardo@glpi.com", profile: "Technician"),
-        GLPIUser(name: "Maria Oliveira", email: "maria@glpi.com", profile: "Hotliner"),
-        GLPIUser(name: "João Pereira", email: "joao@glpi.com", profile: "Observer"),
-        GLPIUser(name: "Carla Santos", email: "carla@glpi.com", profile: "Supervisor"),
-        GLPIUser(name: "Nuno Costa", email: "nuno@glpi.com", profile: "Read-Only"),
-        GLPIUser(name: "Sofia Vieira", email: "sofia@glpi.com", profile: "Technician"),
-        GLPIUser(name: "Pedro Alves", email: "pedro@glpi.com", profile: "Admin"),
-        GLPIUser(name: "Marta Silva", email: "marta@glpi.com", profile: "Technician"),
-        GLPIUser(name: "Luís Costa", email: "luis@glpi.com", profile: "Hotliner"),
-        GLPIUser(name: "Beatriz Santos", email: "beatriz@glpi.com", profile: "Observer")
-    ]
+    @State var users: [GLPIUser] = []
+    
+    private func userMatchesFilter(_ user: GLPIUser, filter: String) -> Bool {
+        let currentName = PreferenceManager.shared.userName ?? ""
+        let currentEmail = PreferenceManager.shared.userEmail ?? ""
+        
+        let isCurrentUser = (!currentName.isEmpty &&
+            user.name.folding(options: .diacriticInsensitive, locale: .current).lowercased() ==
+            currentName.folding(options: .diacriticInsensitive, locale: .current).lowercased()) ||
+            (!currentEmail.isEmpty && 
+             currentEmail.lowercased() != "nenhum e-mail associado" &&
+             user.email.lowercased() != "nenhum e-mail associado" &&
+             user.email.lowercased() == currentEmail.lowercased())
+        
+        let rawList = user.rawProfileList
+        
+        // Lógica idêntica ao Android:
+        // Se filtro = "Admin", excluir Super-Admin (igual ao Android: !role.contains("Super-"))
+        if filter.lowercased() == "admin" {
+            return rawList.range(of: "admin", options: .caseInsensitive) != nil &&
+                   rawList.range(of: "super-", options: .caseInsensitive) == nil &&
+                   rawList.range(of: "super ", options: .caseInsensitive) == nil
+        }
+        
+        // Para todos os outros filtros: contains simples
+        return rawList.range(of: filter, options: .caseInsensitive) != nil
+    }
     
     var filteredUsers: [GLPIUser] {
         let filtered = users.filter { user in
-            let matchesSearch = searchText.isEmpty || user.name.lowercased().contains(searchText.lowercased()) || user.email.lowercased().contains(searchText.lowercased())
-            let matchesFilter = selectedFilter == nil || user.profile == selectedFilter
+            let searchClean = searchText.folding(options: .diacriticInsensitive, locale: .current).lowercased()
+            let nameClean = user.name.folding(options: .diacriticInsensitive, locale: .current).lowercased()
+            let emailClean = user.email.folding(options: .diacriticInsensitive, locale: .current).lowercased()
+            
+            let matchesSearch = searchText.isEmpty || nameClean.contains(searchClean) || emailClean.contains(searchClean)
+            let matchesFilter = selectedFilter == nil || userMatchesFilter(user, filter: selectedFilter!)
             return matchesSearch && matchesFilter
         }
         
@@ -68,7 +87,7 @@ struct UsersListView: View {
     private var totalPages: Int {
         let filteredCount = users.filter { user in
             let matchesSearch = searchText.isEmpty || user.name.lowercased().contains(searchText.lowercased()) || user.email.lowercased().contains(searchText.lowercased())
-            let matchesFilter = selectedFilter == nil || user.profile == selectedFilter
+            let matchesFilter = selectedFilter == nil || userMatchesFilter(user, filter: selectedFilter!)
             return matchesSearch && matchesFilter
         }.count
         return max(1, Int(ceil(Double(filteredCount) / 5.0)))
@@ -84,7 +103,7 @@ struct UsersListView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: GlpiMetrics.universalBackIcon)
                             .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
-                            .foregroundColor(GlpiColors.dynamicText)
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
                     .padding(.leading, GlpiMetrics.universalHeaderLeading)
                     
@@ -106,13 +125,7 @@ struct UsersListView: View {
                 // 2. SEARCH BAR (Sincronizada)
                 GLPISearchHeader(
                     searchText: $searchText,
-                    placeholder: "Pesquisar utilizador...",
-                    rightIcon: "line.3.horizontal.decrease",
-                    isSystemIcon: true,
-                    isRightIconSelected: selectedFilter != nil,
-                    rightIconAction: {
-                        withAnimation { showFilterMenu.toggle() }
-                    }
+                    placeholder: "Pesquisar utilizador..."
                 )
                 .padding(.top, GlpiMetrics.topPadding)
                 .padding(.bottom, 10)
@@ -202,134 +215,102 @@ struct UsersListView: View {
                             } else {
                                 ForEach(filteredUsers) { user in
                                     UserRow(user: user)
-                                        .padding(.horizontal, 16)
-                                        .frame(height: 90)
-                                        .glassStyle(cornerRadius: 22)
                                 }
                             }
                             
-                            // Paginação Premium
-                            HStack(spacing: 0) {
-                                Button(action: {
-                                    if currentPage > 1 { 
-                                        withAnimation { currentPage -= 1 }
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            // Paginação Premium (Universal)
+                            if totalPages > 1 {
+                                HStack(spacing: 0) {
+                                    Button(action: {
+                                        if currentPage > 1 { 
+                                            withAnimation { currentPage -= 1 }
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        }
+                                    }) {
+                                        Image(systemName: "chevron.left")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(GlpiColors.universalBlue)
+                                            .opacity(currentPage == 1 ? 0.2 : 1.0)
+                                            .frame(width: 50, height: 50)
                                     }
-                                }) {
-                                    Image(systemName: "chevron.left")
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(GlpiColors.dynamicText)
-                                        .opacity(currentPage == 1 ? 0.2 : 1.0)
-                                        .frame(width: 50, height: 50)
-                                }
-                                .disabled(currentPage == 1)
-                                
-                                Spacer()
-                                
-                                Text("PÁGINA \(currentPage) DE \(totalPages)")
-                                    .font(.amiko(size: 10, weight: .black))
-                                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
-                                
-                                Spacer()
-                                
-                                Button(action: {
-                                    if currentPage < totalPages { 
-                                        withAnimation { currentPage += 1 }
-                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    .disabled(currentPage == 1)
+                                    
+                                    Spacer()
+                                    
+                                    Rectangle()
+                                        .fill(GlpiColors.dynamicText.opacity(0.15))
+                                        .frame(width: 1, height: 24)
+                                    
+                                    Spacer()
+                                    
+                                    Button(action: {
+                                        if currentPage < totalPages { 
+                                            withAnimation { currentPage += 1 }
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        }
+                                    }) {
+                                        Image(systemName: "chevron.right")
+                                            .font(.system(size: 16, weight: .bold))
+                                            .foregroundColor(GlpiColors.universalBlue)
+                                            .opacity(currentPage == totalPages ? 0.2 : 1.0)
+                                            .frame(width: 50, height: 50)
                                     }
-                                }) {
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 16, weight: .bold))
-                                        .foregroundColor(GlpiColors.dynamicText)
-                                        .opacity(currentPage == totalPages ? 0.2 : 1.0)
-                                        .frame(width: 50, height: 50)
+                                    .disabled(currentPage == totalPages)
                                 }
-                                .disabled(currentPage == totalPages)
+                                .padding(.horizontal, 10)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 50)
+                                .glassStyle(cornerRadius: 15)
+                                .padding(.vertical, 20)
                             }
-                            .padding(.horizontal, 10)
-                            .frame(maxWidth: .infinity)
-                            .frame(height: 50)
-                            .background(Capsule().fill(GlpiColors.dynamicOffWhite))
-                            .overlay(Capsule().stroke(Color.black.opacity(0.05), lineWidth: 0.5))
-                            .padding(.vertical, 20)
                             
                             Spacer(minLength: 120)
                         }
-                        .padding(GlpiMetrics.padding)
+                        .padding(.horizontal, GlpiMetrics.padding)
+                        .padding(.top, 10)
                     }
+                    .scrollDismissesKeyboard(.immediately)
                     .onChange(of: currentPage) { oldValue, newValue in
-                        withAnimation(.spring()) {
+                        withAnimation(.easeInOut(duration: 0.6)) {
                             listProxy.scrollTo("LIST_TOP", anchor: .top)
                         }
                     }
+                    .onChange(of: searchText) { oldValue, newValue in
+                        currentPage = 1
+                    }
                 }
             }
-            .blur(radius: showFilterMenu ? 20 : 0)
             
-            if showFilterMenu {
-                filterOverlayView
+            if isLoading {
+                ZStack {
+                    Color.black.opacity(0.15)
+                        .ignoresSafeArea()
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: GlpiColors.universalBlue))
+                        .scaleEffect(1.5)
+                }
             }
         }
         .navigationBarHidden(true)
-    }
-    
-    private var filterOverlayView: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { withAnimation(.spring()) { showFilterMenu = false } }
-            
-            VStack(alignment: .leading, spacing: 0) {
-                Text("FILTRAR POR PERFIL")
-                    .font(.amiko(size: 13, weight: .black))
-                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
-                    .padding(.horizontal, 20)
-                    .padding(.top, 25)
-                    .padding(.bottom, 12)
-                
-                ForEach(filters, id: \.self) { filter in
-                    filterMenuItem(title: filter, isSelected: selectedFilter == filter) {
-                        withAnimation(.spring()) {
-                            if selectedFilter == filter {
-                                selectedFilter = nil
-                            } else {
-                                selectedFilter = filter
-                            }
-                            showFilterMenu = false
-                            currentPage = 1
-                        }
-                    }
-                    
-                    if filter != filters.last {
-                        Divider().background(GlpiColors.dynamicText.opacity(0.05)).padding(.horizontal, 20)
-                    }
-                }
-                
-                Spacer().frame(height: 15)
-            }
-            .frame(maxWidth: .infinity)
-            .glassStyle(cornerRadius: 30)
-            .padding(.horizontal, 20)
-            .shadow(color: GlpiColors.universalBlue.opacity(0.1), radius: 30)
-            .transition(.scale(scale: 0.9).combined(with: .opacity))
+        .onAppear {
+            loadUsers()
         }
-        .zIndex(10)
     }
     
-    private func filterMenuItem(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title.uppercased())
-                    .font(.amiko(size: 14, weight: isSelected ? .black : .bold))
-                    .foregroundColor(isSelected ? GlpiColors.universalBlue : GlpiColors.dynamicText)
-                Spacer()
-                if isSelected { 
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(GlpiColors.universalBlue) 
+    private func loadUsers() {
+        Task {
+            do {
+                let fetched = try await GLPIClient.shared.fetchAllUsers()
+                await MainActor.run {
+                    self.users = fetched
+                    self.isLoading = false
+                }
+            } catch {
+                print("Erro ao carregar utilizadores: \(error)")
+                await MainActor.run {
+                    self.isLoading = false
                 }
             }
-            .padding(20)
         }
     }
 }
@@ -337,12 +318,35 @@ struct UsersListView: View {
 struct UserRow: View {
     let user: GLPIUser
     
+    private var isCurrentUser: Bool {
+        let currentName = PreferenceManager.shared.userName ?? ""
+        let currentEmail = PreferenceManager.shared.userEmail ?? ""
+        
+        let matchesName = !currentName.isEmpty && 
+            user.name.folding(options: .diacriticInsensitive, locale: .current).lowercased() == 
+            currentName.folding(options: .diacriticInsensitive, locale: .current).lowercased()
+            
+        let matchesEmail = !currentEmail.isEmpty && 
+            currentEmail.lowercased() != "nenhum e-mail associado" &&
+            user.email.lowercased() != "nenhum e-mail associado" &&
+            user.email.lowercased() == currentEmail.lowercased()
+        
+        return matchesName || matchesEmail
+    }
+    
+    private var displayedProfile: String {
+        if isCurrentUser, let sessionProfile = PreferenceManager.shared.userProfile, !sessionProfile.isEmpty, sessionProfile != "null" {
+            return GLPIClient.shared.normalizeProfileString(sessionProfile)
+        }
+        return GLPIClient.shared.normalizeProfileString(user.profile)
+    }
+    
     private var profileColor: Color {
-        switch user.profile {
-        case "Super-Admin": return GlpiColors.deleteRed
-        case "Admin": return .orange
-        case "Technician": return GlpiColors.universalBlue
-        case "Supervisor": return .purple
+        switch displayedProfile.lowercased() {
+        case "super-admin", "super-admins", "super-administrador": return GlpiColors.deleteRed
+        case "admin", "admins", "administrador": return .orange
+        case "technician", "técnico", "tecnico": return GlpiColors.universalBlue
+        case "supervisor": return .purple
         default: return .green
         }
     }
@@ -368,12 +372,14 @@ struct UserRow: View {
                 Text(user.email.lowercased())
                     .font(.amiko(size: 12))
                     .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
             
             Spacer()
             
             // Perfil com Badge Estilizado
-            Text(user.profile.uppercased())
+            Text(displayedProfile.uppercased())
                 .font(.amiko(size: 9, weight: .black))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -381,7 +387,9 @@ struct UserRow: View {
                 .foregroundColor(profileColor)
                 .clipShape(Capsule())
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
+        .frame(height: 90)
+        .glassStyle(cornerRadius: 22)
     }
 }
 

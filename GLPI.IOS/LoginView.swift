@@ -2,7 +2,7 @@
 //  LoginView.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 17/04/2026.
+//  Created by Gonçalo Sousa on 17/04/2026.
 //
 
 import SwiftUI
@@ -16,6 +16,8 @@ struct LoginView: View {
     @State private var password = ""
     @State private var isLoading = false
     @State private var errorMessage: String? = nil
+    @State private var serverURL: String = PreferenceManager.shared.baseURL
+    @AppStorage("is_offline_mode", store: UserDefaults(suiteName: "group.trabalho.GLPI-IOS")) var isOfflineMode: Bool = false
     
     var body: some View {
         ZStack {
@@ -28,10 +30,11 @@ struct LoginView: View {
                     VStack(spacing: 45) {
                         // LOGO OFICIAL (Adaptativo ao Modo Claro/Escuro)
                         VStack(spacing: 0) {
-                            Image("logoapp")
+                            Image(isLightMode ? "logoapp" : "logoapp_black")
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 140, height: 140)
+                                .clipShape(Rectangle().inset(by: 2.0))
                         }
                         
                         if let error = errorMessage {
@@ -50,7 +53,7 @@ struct LoginView: View {
                         .padding(.horizontal, 8)
                         
                         VStack(spacing: 20) {
-                            let isFormValid = !username.isEmpty && !password.isEmpty
+                            let isFormValid = isOfflineMode || (!username.isEmpty && !password.isEmpty)
                             
                             Button(action: {
                                 hideKeyboard()
@@ -84,10 +87,47 @@ struct LoginView: View {
                     .padding(.horizontal, 24)
                     
                     Spacer()
+                    
+                    // Modo Offline Toggle
+                    Toggle(isOn: $isOfflineMode) {
+                        Text("Modo Offline")
+                            .font(.amiko(size: 14, weight: .bold))
+                            .foregroundColor(GlpiColors.dynamicText.opacity(0.8))
+                    }
+                    .padding(.horizontal, 40)
+                    .padding(.bottom, 20)
+                    .tint(GlpiColors.universalBlue)
+                    
+                    // Escolha do Servidor
+                    Menu {
+                        Button("Localhost (Dev)") {
+                            serverURL = "http://localhost:8080/"
+                            PreferenceManager.shared.baseURL = serverURL
+                        }
+                        Button("Vila Verde (Produção)") {
+                            serverURL = "http://O_TEU_SERVIDOR_PRODUCAO/"
+                            PreferenceManager.shared.baseURL = serverURL
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "network")
+                            Text(serverURL.contains("localhost") ? "Localhost (Dev)" : "Vila Verde (Produção)")
+                            Image(systemName: "chevron.up.chevron.down")
+                        }
+                        .font(.amiko(size: 12, weight: .bold))
+                        .foregroundColor(GlpiColors.dynamicText.opacity(0.6))
+                        .padding(.vertical, 8)
+                        .padding(.horizontal, 16)
+                        .background(GlpiColors.dynamicOffWhite)
+                        .cornerRadius(12)
+                    }
+                    .padding(.bottom, 30)
                 }
                 .frame(minHeight: UIScreen.screenHeight)
+                .contentShape(Rectangle())
+                .onTapGesture { hideKeyboard() }
             }
-            .universalBackgroundDismiss { hideKeyboard() }
+            .scrollDismissesKeyboard(.immediately)
         }
         .ignoresSafeArea()
         .preferredColorScheme(isLightMode ? .light : .dark)
@@ -104,25 +144,30 @@ struct LoginView: View {
         errorMessage = nil
         
         LoginService.shared.login(user: username, pass: password) { result in
-            switch result {
-            case .success(let token):
-                print("LoginView: Login sucesso, token: \(token)")
-                
-                // Tenta validar a sessão (como o Android), mas não bloqueia se der erro de formato
-                GLPIService.shared.getFullSession()
-                    .sink { completion in
-                        isLoading = false
-                        // Independentemente de erro na validação extra, deixamos entrar
-                        isLoggedIn = true
-                    } receiveValue: { _ in
-                        // Sucesso total
-                    }
-                    .store(in: &cancellables)
-                
-            case .failure(let error):
-                isLoading = false
-                errorMessage = error.localizedDescription
-                print("LoginView: Erro no login: \(error.localizedDescription)")
+            DispatchQueue.main.async {
+                switch result {
+                case .success(let token):
+                    print("LoginView: Login sucesso, token: \(token)")
+                    
+                    // Tenta obter a sessão completa e o ID real do utilizador antes de avançar
+                    GLPIService.shared.getFullSession()
+                        .receive(on: DispatchQueue.main)
+                        .sink { completion in
+                            self.isLoading = false
+                            // Independentemente de erro na validação extra, avançamos para o dashboard
+                            withAnimation {
+                                self.isLoggedIn = true
+                            }
+                        } receiveValue: { success in
+                            print("LoginView: getFullSession completado com sucesso: \(success). ID do utilizador atualizado: \(PreferenceManager.shared.userId)")
+                        }
+                        .store(in: &self.cancellables)
+                    
+                case .failure(let error):
+                    self.isLoading = false
+                    self.errorMessage = error.localizedDescription
+                    print("LoginView: Erro no login: \(error.localizedDescription)")
+                }
             }
         }
     }

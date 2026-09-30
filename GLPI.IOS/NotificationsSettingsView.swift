@@ -2,7 +2,7 @@
 //  NotificationsSettingsView.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 27/04/2026.
+//  Created by Gonçalo Sousa on 27/04/2026.
 //
 
 import SwiftUI
@@ -11,14 +11,15 @@ struct NotificationsSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("isLightMode_V2") var isLightMode = true
     
-    @State private var allowNotifications = true
-    @State private var notifyNewTickets = true
-    @State private var notifyResolvedTickets = false
-    @State private var notifyAssignedTickets = true
+    @AppStorage("allowNotifications") private var allowNotifications = true
+    @AppStorage("notifyRequester") private var notifyRequester = true
+    @AppStorage("notifyObserver") private var notifyObserver = true
+    @AppStorage("notifyAssigned") private var notifyAssigned = true
+    @AppStorage("notifyResolved") private var notifyResolved = false
     
     var body: some View {
         ZStack {
-            GlpiColors.background.ignoresSafeArea()
+            (isLightMode ? Color.white : Color.black).ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // 1. Cabeçalho Universal (Seta de Voltar)
@@ -65,10 +66,10 @@ struct NotificationsSettingsView: View {
                                 
                                 VStack(spacing: 0) {
                                     NotificationToggleRow(
-                                        title: "Tickets Novos",
-                                        subtitle: "Sempre que um novo ticket for criado",
-                                        icon: "plus.circle.fill",
-                                        isOn: $notifyNewTickets
+                                        title: "Tickets como Requerente",
+                                        subtitle: "Quando for requerente de um ticket",
+                                        icon: "person.fill",
+                                        isOn: $notifyRequester
                                     )
                                     
                                     Divider()
@@ -76,10 +77,10 @@ struct NotificationsSettingsView: View {
                                         .padding(.vertical, 10)
                                     
                                     NotificationToggleRow(
-                                        title: "Tickets Resolvidos",
-                                        subtitle: "Quando um ticket for marcado como concluído",
-                                        icon: "checkmark.circle.fill",
-                                        isOn: $notifyResolvedTickets
+                                        title: "Tickets como Observador",
+                                        subtitle: "Quando for observador de um ticket",
+                                        icon: "eye.fill",
+                                        isOn: $notifyObserver
                                     )
                                     
                                     Divider()
@@ -90,7 +91,18 @@ struct NotificationsSettingsView: View {
                                         title: "Tickets Atribuídos",
                                         subtitle: "Quando um ticket lhe for atribuído",
                                         icon: "person.badge.plus.fill",
-                                        isOn: $notifyAssignedTickets
+                                        isOn: $notifyAssigned
+                                    )
+                                    
+                                    Divider()
+                                        .background(GlpiColors.dynamicText.opacity(0.05))
+                                        .padding(.vertical, 10)
+                                    
+                                    NotificationToggleRow(
+                                        title: "Tickets Finalizados",
+                                        subtitle: "Quando um ticket for finalizado/concluído",
+                                        icon: "checkmark.circle.fill",
+                                        isOn: $notifyResolved
                                     )
                                 }
                                 .padding(20)
@@ -112,6 +124,11 @@ struct NotificationsSettingsView: View {
         }
         .navigationBarHidden(true)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: allowNotifications)
+        .onChange(of: allowNotifications) { oldValue, newValue in
+            if newValue {
+                GLPINotificationManager.shared.requestPermission()
+            }
+        }
     }
 }
 

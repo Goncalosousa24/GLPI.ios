@@ -2,7 +2,7 @@
 //  FloatingTabBar.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 18/04/2026.
+//  Created by Gonçalo Sousa on 18/04/2026.
 //
 
 import SwiftUI
@@ -61,7 +61,7 @@ struct FloatingTabBar: View {
                                     .renderingMode(.template)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
-                                    .frame(width: 26, height: 26)
+                                    .frame(width: tab == .agenda ? 22 : 26, height: tab == .agenda ? 22 : 26)
                                     .foregroundColor(.white.opacity(selectedTab == tab ? 1.0 : 0.5))
                             }
                         }

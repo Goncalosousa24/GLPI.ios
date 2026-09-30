@@ -45,6 +45,7 @@ struct LocationPickerView: View {
                 )
             }
             .coordinateSpace(name: "locScroll")
+            .scrollDismissesKeyboard(.immediately)
             .frame(height: listHeight)
             .onPreferenceChange(LocOffsetKey.self) { value in
                 contentOffset = max(0, -value)

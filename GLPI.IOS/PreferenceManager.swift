@@ -2,7 +2,7 @@
 //  PreferenceManager.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 17/04/2026.
+//  Created by Gonçalo Sousa on 17/04/2026.
 //
 
 import Foundation
@@ -22,6 +22,7 @@ class PreferenceManager {
         static let userProfile = "cached_user_profile"
         static let userId = "authenticated_user_id"
         static let isOfflineMode = "is_offline_mode"
+        static let userDisplayName = "cached_user_display_name"
         
         // --- Widget Data ---
         static let latestTicketTitle = "widget_ticket_title"
@@ -42,7 +43,7 @@ class PreferenceManager {
     
     // --- Configurações do Servidor ---
     var isOfflineMode: Bool {
-        get { return true } // Forçado a true para desenvolvimento offline
+        get { return defaults.bool(forKey: Keys.isOfflineMode) }
         set { defaults.set(newValue, forKey: Keys.isOfflineMode) }
     }
     
@@ -52,12 +53,12 @@ class PreferenceManager {
     }
     
     var appToken: String {
-        get { defaults.string(forKey: Keys.appToken) ?? "Kv6GgUHREqU0e35dKamiQSh5vjUYenPrqMItEeIh" }
+        get { defaults.string(forKey: Keys.appToken) ?? "COLOQUE_O_SEU_APP_TOKEN_AQUI" }
         set { defaults.set(newValue, forKey: Keys.appToken) }
     }
     
     var sessionToken: String {
-        get { defaults.string(forKey: Keys.sessionToken) ?? "2j7mk6e6vje7866g8jvlgft1s6" }
+        get { defaults.string(forKey: Keys.sessionToken) ?? "COLOQUE_O_SEU_SESSION_TOKEN_AQUI" }
         set { defaults.set(newValue, forKey: Keys.sessionToken) }
     }
     
@@ -65,6 +66,11 @@ class PreferenceManager {
     var userName: String? {
         get { defaults.string(forKey: Keys.userName) }
         set { defaults.set(newValue, forKey: Keys.userName) }
+    }
+    
+    var userDisplayName: String? {
+        get { defaults.string(forKey: Keys.userDisplayName) }
+        set { defaults.set(newValue, forKey: Keys.userDisplayName) }
     }
     
     var userEmail: String? {
@@ -83,7 +89,7 @@ class PreferenceManager {
     }
     
     func clearAllDataCache() {
-        let keysToRemove = [Keys.userName, Keys.userEmail, Keys.userProfile]
+        let keysToRemove = [Keys.userName, Keys.userEmail, Keys.userProfile, Keys.userId, Keys.userDisplayName]
         for key in keysToRemove {
             defaults.removeObject(forKey: key)
         }

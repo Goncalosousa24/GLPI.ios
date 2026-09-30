@@ -11,26 +11,72 @@ actor UserNameResolver {
     
     private init() {}
     
+    private func formatName(_ name: String) -> String {
+        var cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !cleanName.contains("@") && cleanName.contains(".") {
+            cleanName = cleanName.replacingOccurrences(of: ".", with: " ")
+        }
+        
+        let trimmed = cleanName
+        if trimmed.isEmpty || trimmed.lowercased().hasPrefix("id:") || Int(trimmed) != nil {
+            return name
+        }
+        
+        if trimmed.lowercased() == "pendente" || trimmed.lowercased() == "desconhecido" {
+            return trimmed.capitalized
+        }
+        
+        let components = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+        guard !components.isEmpty else { return name }
+        
+        let ignoreWords = Set(["de", "do", "da", "dos", "das", "e"])
+        let filtered = components.filter { !ignoreWords.contains($0.lowercased()) }
+        
+        guard !filtered.isEmpty else { return name }
+        
+        let first = filtered.first!.lowercased().capitalized
+        if filtered.count > 1 {
+            let last = filtered.last!.lowercased().capitalized
+            return "\(first) \(last)"
+        }
+        return first
+    }
+    
     /// Resolve o nome de um utilizador ou grupo de forma assíncrona
     func resolve(id: String, baseURL: String, sessionToken: String, appToken: String) async -> String {
         if PreferenceManager.shared.isOfflineMode {
-            return id
+            return formatName(id)
         }
         
         let cleanId = id.replacingOccurrences(of: ".0", with: "")
-        if cleanId.isEmpty || cleanId == "0" || Int(cleanId) == nil { return id }
-        
-        // 1. Verificar Cache
-        if let cached = cache[cleanId] {
-            return cached
+        if cleanId.isEmpty || cleanId == "0" {
+            return formatName(id)
         }
         
-        // 2. Verificar se já existe uma tarefa em curso para este ID
+        // 1. Verificar se é o utilizador logado para evitar chamadas de API desnecessárias/bloqueadas por permissões
+        if let loggedInUsername = PreferenceManager.shared.userName, cleanId.lowercased() == loggedInUsername.lowercased() {
+            if let cachedDisplayName = PreferenceManager.shared.userDisplayName {
+                return formatName(cachedDisplayName)
+            }
+        }
+        if cleanId == String(PreferenceManager.shared.userId) {
+            if let cachedDisplayName = PreferenceManager.shared.userDisplayName {
+                return formatName(cachedDisplayName)
+            }
+        }
+        
+        // 2. Verificar Cache
+        if let cached = cache[cleanId] {
+            return formatName(cached)
+        }
+        
+        // 2. Verificar se já existe uma tarefa em curso para este ID/Username
         if let existingTask = pendingTasks[cleanId] {
             do {
-                return try await existingTask.value
+                let name = try await existingTask.value
+                return formatName(name)
             } catch {
-                return "ID: \(cleanId)"
+                return formatName(cleanId)
             }
         }
         
@@ -46,53 +92,57 @@ actor UserNameResolver {
             let result = try await task.value
             cache[cleanId] = result
             pendingTasks.removeValue(forKey: cleanId)
-            return result
+            return formatName(result)
         } catch {
             pendingTasks.removeValue(forKey: cleanId)
-            return "ID: \(cleanId)"
+            return formatName(cleanId)
         }
     }
     
     private func fetchNameFromServer(id: String, baseURL: String, sessionToken: String, appToken: String) async -> String {
         let cleanBaseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
         
-        // Tentamos primeiro USER, depois GROUP
-        let types = ["User", "Group"]
-        
-        for type in types {
-            let urlString = "\(cleanBaseURL)/apirest.php/\(type)/\(id)?expand_dropdowns=true"
-            guard let url = URL(string: urlString) else { continue }
-            
-            var request = URLRequest(url: url)
-            request.addValue(sessionToken, forHTTPHeaderField: "Session-Token")
-            request.addValue(appToken, forHTTPHeaderField: "App-Token")
-            request.addValue("application/json", forHTTPHeaderField: "Accept")
-            
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    continue // Tenta o próximo tipo se não for 200
-                }
+        // Se for numérico, tentamos primeiro endpoints diretos de User / Group
+        if Int(id) != nil {
+            let types = ["User", "Group"]
+            for type in types {
+                let urlString = "\(cleanBaseURL)/apirest.php/\(type)/\(id)?expand_dropdowns=true"
+                guard let url = URL(string: urlString) else { continue }
                 
-                let actor = try JSONDecoder().decode(GLPIActor.self, from: data)
-                return actor.displayName
-            } catch {
-                continue
+                var request = URLRequest(url: url)
+                request.addValue(sessionToken, forHTTPHeaderField: "Session-Token")
+                request.addValue(appToken, forHTTPHeaderField: "App-Token")
+                request.addValue("application/json", forHTTPHeaderField: "Accept")
+                
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
+                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                        continue // Tenta o próximo tipo se não for 200
+                    }
+                    
+                    let actor = try JSONDecoder().decode(GLPIActor.self, from: data)
+                    return actor.displayName
+                } catch {
+                    continue
+                }
             }
         }
         
-        // Se ambos falharem com endpoints diretos, o teu servidor pode exigir a API de SEARCH
+        // Se ambos falharem com endpoints diretos, ou se não for ID numérico (e.g. username), tentamos a pesquisa
         return await fetchViaSearch(id: id, baseURL: baseURL, sessionToken: sessionToken, appToken: appToken)
     }
     
     private func fetchViaSearch(id: String, baseURL: String, sessionToken: String, appToken: String) async -> String {
         let cleanBaseURL = baseURL.hasSuffix("/") ? String(baseURL.dropLast()) : baseURL
         
-        // Procurar no Search de User (Campo 2 é o ID)
-        let urlString = "\(cleanBaseURL)/apirest.php/search/User?criteria[0][field]=2&criteria[0][searchtype]=equals&criteria[0][value]=\(id)&forcedisplay[0]=1&forcedisplay[1]=9&forcedisplay[2]=34&forcedisplay[3]=81"
+        // Se for numérico, procuramos no campo 2 (ID). Se não, no campo 1 (Username/Login)
+        let isNumeric = Int(id) != nil
+        let field = isNumeric ? "2" : "1"
+        
+        let urlString = "\(cleanBaseURL)/apirest.php/search/User?criteria[0][field]=\(field)&criteria[0][searchtype]=equals&criteria[0][value]=\(id)&forcedisplay[0]=1&forcedisplay[1]=9&forcedisplay[2]=34&forcedisplay[3]=81"
         
         guard let url = URL(string: urlString.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "") else {
-            return "ID: \(id)"
+            return id
         }
         
         var request = URLRequest(url: url)
@@ -112,13 +162,13 @@ actor UserNameResolver {
                 
                 let fullName = !cname.isEmpty ? cname : 
                               (!(fname.isEmpty && rname.isEmpty) ? "\(fname) \(rname)".trimmingCharacters(in: .whitespaces) : 
-                              (!uname.isEmpty ? uname : "ID: \(id)"))
+                              (!uname.isEmpty ? uname : id))
                 return fullName
             }
         } catch {
-            return "ID: \(id)"
+            return id
         }
         
-        return "ID: \(id)"
+        return id
     }
 }

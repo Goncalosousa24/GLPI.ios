@@ -6,15 +6,17 @@ struct TicketEditView: View {
     @AppStorage("isLightMode_V2") var isLightMode: Bool = true
     
     @State private var requesterList: [TechnicianAssignment] = []
-    @State private var atribuidoList: [TechnicianAssignment]
+    @State private var atribuidoList: [TechnicianAssignment] = []
     
     // Lista de Mock de utilizadores para sugestões
     private let mockUsers = ["Gonçalo Sousa", "Maria Silva", "João Mendes", "Ana Costa", "Pedro Alves", "Sónia Luz", "Rui Santos", "Carla Dias", "Nuno Lima", "Eduardo Lima", "Beatriz Silva", "Carlos Mendes", "Diana Rose"]
-    @State private var tipo: String
-    @State private var categoria: String
-    @State private var fonte: String
-    @State private var prioridade: TicketPriority?
-    @State private var descricao: String
+    
+    @State private var tipo: String = ""
+    @State private var categoria: String = ""
+    @State private var fonte: String = ""
+    @State private var estado: String = ""
+    @State private var prioridade: TicketPriority? = nil
+    @State private var descricao: String = ""
     
     @State private var tempoAtendimento: String = ""
     @State private var atendimentoDate = Date()
@@ -24,6 +26,7 @@ struct TicketEditView: View {
     @State private var isTypeExpanded = false
     @State private var isCategoryExpanded = false
     @State private var isSourceExpanded = false
+    @State private var isStatusExpanded = false
     @State private var isPriorityExpanded = false
     @State private var isAtendimentoExpanded = false
     @State private var isSolucaoExpanded = false
@@ -36,27 +39,59 @@ struct TicketEditView: View {
     @FocusState private var focusedField: Field?
     
     let ticketTypes = ["Incidente", "Pedido"]
-    let categories = ["Geral", "Hardware", "Software", "Rede", "Email"]
-    let sources = ["App", "Email", "Telefone", "Direto"]
+    @State private var categoriesList: [String] = ["Geral", "Hardware", "Software", "Rede", "Email"]
+    @State private var categoryMap: [String: String] = [:] // maps category completename -> id
+    let sources = ["Direto", "E-Mail", "Formcreator", "Helpdesk", "Telefone", "Escrito", "Outro"]
+    
+    // Novas variáveis de estado para busca e sincronização
+    @State private var suggestedUsers: [String] = []
+    @State private var userIdsMap: [String: String] = [:] // maps name -> user id
+    @State private var searchTask: Task<Void, Never>? = nil
+    @State private var isLoading = false
+    @State private var isSaving = false
+    @State private var showAlert = false
+    @State private var showConfirmAlert = false
+    @State private var alertMessage = ""
+    @State private var isSuccess = false
     
     init(ticket: GLPITicket) {
         self.ticket = ticket
-        _requesterList = State(initialValue: [TechnicianAssignment(name: "")])
+        
+        // Inicializar com os dados básicos vindos do ticket
+        _prioridade = State(initialValue: ticket.priority)
+        _descricao = State(initialValue: ticket.description)
+        
+        let statusMap = [
+            "1": "Novo",
+            "2": "A processar (atribuído)",
+            "3": "A processar (planeado)",
+            "4": "Aguardando",
+            "5": "Finalizado",
+            "6": "Encerrado"
+        ]
+        let currentStatus = statusMap[ticket.rawStatus] ?? "Novo"
+        _estado = State(initialValue: currentStatus)
+        
+        // Valores iniciais de fallback para requesters/technicians
+        let reqName = ticket.requester
+        let reqList: [TechnicianAssignment]
+        if reqName.isEmpty || reqName == "Pendente" {
+            reqList = [TechnicianAssignment(name: "")]
+        } else {
+            let names = reqName.components(separatedBy: " & ")
+            reqList = names.map { TechnicianAssignment(name: $0) }
+        }
+        _requesterList = State(initialValue: reqList)
         
         let assigned = ticket.assignedTo
+        let assignedList: [TechnicianAssignment]
         if assigned.isEmpty || assigned == "Pendente" {
-            _atribuidoList = State(initialValue: [TechnicianAssignment(name: "")])
+            assignedList = [TechnicianAssignment(name: "")]
         } else {
             let names = assigned.components(separatedBy: " & ")
-            let list = names.map { TechnicianAssignment(name: $0) }
-            _atribuidoList = State(initialValue: list)
+            assignedList = names.map { TechnicianAssignment(name: $0) }
         }
-        
-        _tipo = State(initialValue: "")
-        _categoria = State(initialValue: "")
-        _fonte = State(initialValue: "")
-        _prioridade = State(initialValue: nil)
-        _descricao = State(initialValue: "")
+        _atribuidoList = State(initialValue: assignedList)
     }
     
     var body: some View {
@@ -86,18 +121,94 @@ struct TicketEditView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            closeOtherPickers(except: "")
+                        }
+                    }
                 }
                 .scrollDismissesKeyboard(.immediately)
-                .simultaneousGesture(DragGesture().onChanged { _ in
-                    withAnimation(.spring()) {
-                        closeOtherPickers(except: "")
-                        focusedId = nil
-                        focusedField = nil
+            }
+            
+            if isLoading || isSaving {
+                ZStack {
+                    Color.black.opacity(0.4)
+                        .ignoresSafeArea()
+                    VStack(spacing: 15) {
+                        ProgressView()
+                            .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            .scaleEffect(1.5)
+                        Text(isSaving ? "A gravar alterações..." : "A carregar dados...")
+                            .font(.amiko(size: 14, weight: .bold))
+                            .foregroundColor(.white)
                     }
-                })
+                    .padding(30)
+                    .background(Color.black.opacity(0.7))
+                    .cornerRadius(20)
+                }
             }
         }
         .preferredColorScheme(isLightMode ? .light : .dark)
+        .alert(isSuccess ? "SUCESSO" : "ERRO", isPresented: $showAlert) {
+            Button("OK") {
+                if isSuccess {
+                    dismiss()
+                }
+            }
+        } message: {
+            Text(alertMessage)
+        }
+        .alert("CONFIRMAR EDIÇÃO", isPresented: $showConfirmAlert) {
+            Button("Cancelar", role: .cancel) { }
+            Button("Confirmar") {
+                saveChanges()
+            }
+        } message: {
+            Text("Tem a certeza que deseja atualizar este ticket com as novas alterações?")
+        }
+        .onAppear {
+            loadInitialData()
+        }
+        .onChange(of: focusedId) { oldValue, newValue in
+            if let newId = newValue {
+                let currentName = (requesterList.first(where: { $0.id == newId })?.name ?? 
+                                   atribuidoList.first(where: { $0.id == newId })?.name ?? "")
+                handleNameChange(for: newId, newName: currentName)
+            } else {
+                self.suggestedUsers = []
+            }
+        }
+        .onChange(of: requesterList) { oldValue, newValue in
+            // Atualizar IDs correspondentes aos nomes se existirem no mapa
+            for i in 0..<requesterList.count {
+                let name = requesterList[i].name
+                if let id = userIdsMap[name], requesterList[i].userId != id {
+                    requesterList[i].userId = id
+                }
+            }
+            if let focused = focusedId,
+               let item = newValue.first(where: { $0.id == focused }),
+               let oldItem = oldValue.first(where: { $0.id == focused }),
+               item.name != oldItem.name {
+                handleNameChange(for: focused, newName: item.name)
+            }
+        }
+        .onChange(of: atribuidoList) { oldValue, newValue in
+            // Atualizar IDs correspondentes aos nomes se existirem no mapa
+            for i in 0..<atribuidoList.count {
+                let name = atribuidoList[i].name
+                if let id = userIdsMap[name], atribuidoList[i].userId != id {
+                    atribuidoList[i].userId = id
+                }
+            }
+            if let focused = focusedId,
+               let item = newValue.first(where: { $0.id == focused }),
+               let oldItem = oldValue.first(where: { $0.id == focused }),
+               item.name != oldItem.name {
+                handleNameChange(for: focused, newName: item.name)
+            }
+        }
     }
     
     // MARK: - Components
@@ -107,7 +218,7 @@ struct TicketEditView: View {
             Button(action: { dismiss() }) {
                 Image(systemName: GlpiMetrics.universalBackIcon)
                     .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
-                    .foregroundColor(GlpiColors.dynamicText)
+                    .foregroundColor(GlpiColors.universalBlue)
             }
             .padding(.leading, GlpiMetrics.padding + 5)
             
@@ -188,7 +299,7 @@ struct TicketEditView: View {
                         assignment: $req,
                         focusedId: $focusedId,
                         showDelete: requesterList.count > 1,
-                        suggestions: getRequesterSuggestions(for: req.name),
+                        suggestions: (focusedId == req.id) ? suggestedUsers : [],
                         onDelete: {
                             withAnimation {
                                 requesterList.removeAll { $0.id == req.id }
@@ -234,7 +345,7 @@ struct TicketEditView: View {
                         assignment: $atrib,
                         focusedId: $focusedId,
                         showDelete: atribuidoList.count > 1,
-                        suggestions: getAssignmentSuggestions(for: atrib.name),
+                        suggestions: (focusedId == atrib.id) ? suggestedUsers : [],
                         onDelete: {
                             withAnimation {
                                 atribuidoList.removeAll { $0.id == atrib.id }
@@ -248,6 +359,24 @@ struct TicketEditView: View {
     
     private var selectorsSection: some View {
         VStack(spacing: 25) {
+            // ESTADO
+            VStack(spacing: 8) {
+                EditFieldCapsule(label: "ESTADO", value: estado.isEmpty ? "SELECIONAR" : estado, icon: "", valueColor: estado.isEmpty ? GlpiColors.dynamicBlueText : nil, isSelected: isStatusExpanded) {
+                    withAnimation(.spring()) {
+                        isStatusExpanded.toggle()
+                        closeOtherPickers(except: "status")
+                    }
+                }
+                if isStatusExpanded {
+                    ScrollablePickerView(
+                        options: ["Novo", "A processar (atribuído)", "A processar (planeado)", "Aguardando", "Finalizado", "Encerrado"],
+                        selected: $estado,
+                        onSelect: { withAnimation { isStatusExpanded = false } }
+                    )
+                    .glassStyle(cornerRadius: 22)
+                }
+            }
+            
             // TIPO
             VStack(spacing: 8) {
                 EditFieldCapsule(label: "TIPO", value: tipo.isEmpty ? "SELECIONAR" : tipo, icon: "", valueColor: tipo.isEmpty ? GlpiColors.dynamicBlueText : nil, isSelected: isTypeExpanded) {
@@ -280,7 +409,7 @@ struct TicketEditView: View {
                 }
                 if isCategoryExpanded {
                     ScrollablePickerView(
-                        options: categories,
+                        options: categoriesList,
                         selected: $categoria,
                         onSelect: { withAnimation { isCategoryExpanded = false } }
                     )
@@ -302,6 +431,28 @@ struct TicketEditView: View {
                         selected: $fonte,
                         onSelect: { withAnimation { isSourceExpanded = false } }
                     )
+                    .glassStyle(cornerRadius: 22)
+                }
+            }
+            
+            // PRIORIDADE
+            VStack(spacing: 8) {
+                EditFieldCapsule(label: "PRIORIDADE", value: prioridade?.rawValue ?? "SELECIONAR", icon: "", valueColor: prioridade == nil ? GlpiColors.dynamicBlueText : nil, isSelected: isPriorityExpanded) {
+                    withAnimation(.spring()) {
+                        isPriorityExpanded.toggle()
+                        closeOtherPickers(except: "priority")
+                    }
+                }
+                if isPriorityExpanded {
+                    VStack(spacing: 4) {
+                        ForEach(TicketPriority.allCases, id: \.self) { prio in
+                            OptionRow(title: prio.rawValue, isSelected: prioridade == prio) {
+                                prioridade = prio
+                                withAnimation { isPriorityExpanded = false }
+                            }
+                        }
+                    }
+                    .padding(8)
                     .glassStyle(cornerRadius: 22)
                 }
             }
@@ -400,12 +551,11 @@ struct TicketEditView: View {
         }
         .onChange(of: focusedId) { _, newValue in
             if newValue != nil {
-                // Se um campo de texto ganhar foco, fechamos apenas os seletores manuais (booleanos)
-                // NÃO chamamos closeOtherPickers pois ele resetaria o focusedId criando um loop
                 withAnimation(.spring()) {
                     isTypeExpanded = false
                     isCategoryExpanded = false
                     isSourceExpanded = false
+                    isStatusExpanded = false
                     isPriorityExpanded = false
                     isAtendimentoExpanded = false
                     isSolucaoExpanded = false
@@ -417,7 +567,7 @@ struct TicketEditView: View {
     private var editButton: some View {
         Button(action: {
             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            dismiss()
+            showConfirmAlert = true
         }) {
             Text("EDITAR TICKET")
                 .font(.amiko(size: 15, weight: .black))
@@ -434,34 +584,386 @@ struct TicketEditView: View {
         .padding(.bottom, 60)
     }
     
-    private func getRequesterSuggestions(for text: String) -> [String] {
-        let users = text.isEmpty ? mockUsers : mockUsers.filter { $0.localizedCaseInsensitiveContains(text) && $0 != text }
-        var result = users
+    // MARK: - Logic & Actions
+    
+    private func loadInitialData() {
+        isLoading = true
+        Task {
+            do {
+                // 1. Carregar Categorias
+                let cats = try await GLPIClient.shared.getITILCategories()
+                var newCats: [String] = []
+                var newMap: [String: String] = [:]
+                for cat in cats {
+                    if let id = cat["id"] as? Int ?? (cat["id"] as? String).flatMap(Int.init),
+                       let nameRaw = cat["completename"] as? String ?? cat["name"] as? String {
+                        let name = GlpiHtmlFixer.unescapeHtml(nameRaw)
+                        newCats.append(name)
+                        newMap[name] = String(id)
+                    }
+                }
+                
+                // 2. Carregar Detalhes do Ticket
+                let fullTicket = try await GLPIClient.shared.getTicketById(id: ticket.id)
+                
+                var resolvedType = ""
+                if let typeInt = fullTicket["type"] as? Int ?? (fullTicket["type"] as? String).flatMap(Int.init) {
+                    resolvedType = (typeInt == 2) ? "Pedido" : "Incidente"
+                }
+                
+                var resolvedFonte = ""
+                if let sourceVal = fullTicket["requesttypes_id"] {
+                    var sourceName = "Direto"
+                    if let sourceDict = sourceVal as? [String: Any], let name = sourceDict["name"] as? String {
+                        sourceName = name
+                    } else if let sourceStr = sourceVal as? String {
+                        sourceName = sourceStr
+                    } else if let sourceInt = sourceVal as? Int {
+                        sourceName = String(sourceInt)
+                    }
+                    resolvedFonte = resolveSourceName(sourceName)
+                }
+                
+                var resolvedCategory = ""
+                if let catVal = fullTicket["itilcategories_id"] {
+                    if let catDict = catVal as? [String: Any], let name = catDict["completename"] as? String ?? catDict["name"] as? String {
+                        resolvedCategory = GlpiHtmlFixer.unescapeHtml(name)
+                    } else if let catStr = catVal as? String {
+                        resolvedCategory = GlpiHtmlFixer.unescapeHtml(catStr)
+                    }
+                }
+                
+                var resolvedTto = ""
+                var ttoDate = Date()
+                if let tto = fullTicket["time_to_own"] as? String, tto != "null", !tto.isEmpty {
+                    resolvedTto = formatGLPIDateToDisplay(tto)
+                    if let d = parseGLPIDate(tto) {
+                        ttoDate = d
+                    }
+                }
+                
+                var resolvedTtr = ""
+                var ttrDate = Date()
+                if let ttr = fullTicket["time_to_resolve"] as? String, ttr != "null", !ttr.isEmpty {
+                    resolvedTtr = formatGLPIDateToDisplay(ttr)
+                    if let d = parseGLPIDate(ttr) {
+                        ttrDate = d
+                    }
+                }
+                
+                // 3. Carregar Atores do Ticket (requerentes e técnicos)
+                let actors = try await GLPIClient.shared.getTicketActors(ticketId: ticket.id)
+                var newReqList: [TechnicianAssignment] = []
+                var newTechList: [TechnicianAssignment] = []
+                var tempUsersMap: [String: String] = [:]
+                
+                for actor in actors {
+                    guard let type = actor["type"] as? Int ?? (actor["type"] as? String).flatMap(Int.init) else { continue }
+                    
+                    var userIdStr = ""
+                    var resolvedName = ""
+                    
+                    if let userDict = actor["users_id"] as? [String: Any] {
+                        if let uid = userDict["id"] as? Int { userIdStr = String(uid) }
+                        else if let uid = userDict["id"] as? String { userIdStr = uid }
+                        
+                        let fname = userDict["firstname"] as? String ?? ""
+                        let rname = userDict["realname"] as? String ?? ""
+                        let uname = userDict["name"] as? String ?? ""
+                        
+                        resolvedName = fname.isEmpty && rname.isEmpty ? uname : "\(fname) \(rname)".trimmingCharacters(in: .whitespaces)
+                    }
+                    
+                    if userIdStr.isEmpty {
+                        let userIdVal = actor["users_id"]
+                        if let idInt = userIdVal as? Int { userIdStr = String(idInt) }
+                        else if let idStr = userIdVal as? String { userIdStr = idStr }
+                    }
+                    
+                    if resolvedName.isEmpty && !userIdStr.isEmpty {
+                        resolvedName = await UserNameResolver.shared.resolve(
+                            id: userIdStr,
+                            baseURL: PreferenceManager.shared.baseURL,
+                            sessionToken: PreferenceManager.shared.sessionToken,
+                            appToken: PreferenceManager.shared.appToken
+                        )
+                    }
+                    
+                    if !resolvedName.isEmpty {
+                        tempUsersMap[resolvedName] = userIdStr
+                        let assignment = TechnicianAssignment(name: resolvedName, userId: userIdStr)
+                        if type == 1 {
+                            newReqList.append(assignment)
+                        } else if type == 2 {
+                            newTechList.append(assignment)
+                        }
+                    }
+                }
+                
+                await MainActor.run {
+                    if !newCats.isEmpty {
+                        self.categoriesList = newCats.sorted()
+                        self.categoryMap = newMap
+                    }
+                    if !resolvedType.isEmpty { self.tipo = resolvedType }
+                    if !resolvedFonte.isEmpty { self.fonte = resolvedFonte }
+                    if !resolvedCategory.isEmpty { self.categoria = resolvedCategory }
+                    
+                    if !resolvedTto.isEmpty {
+                        self.tempoAtendimento = resolvedTto
+                        self.atendimentoDate = ttoDate
+                    }
+                    if !resolvedTtr.isEmpty {
+                        self.tempoSolucao = resolvedTtr
+                        self.solucaoDate = ttrDate
+                    }
+                    
+                    for (k, v) in tempUsersMap {
+                        self.userIdsMap[k] = v
+                    }
+                    
+                    if !newReqList.isEmpty {
+                        self.requesterList = newReqList
+                    } else {
+                        let reqName = ticket.requester
+                        if reqName.isEmpty || reqName == "Pendente" {
+                            self.requesterList = [TechnicianAssignment(name: "")]
+                        } else {
+                            let names = reqName.components(separatedBy: " & ")
+                            self.requesterList = names.map { TechnicianAssignment(name: $0) }
+                        }
+                    }
+                    
+                    if !newTechList.isEmpty {
+                        self.atribuidoList = newTechList
+                    } else {
+                        let assigned = ticket.assignedTo
+                        if assigned.isEmpty || assigned == "Pendente" {
+                            self.atribuidoList = [TechnicianAssignment(name: "")]
+                        } else {
+                            let names = assigned.components(separatedBy: " & ")
+                            self.atribuidoList = names.map { TechnicianAssignment(name: $0) }
+                        }
+                    }
+                    
+                    self.isLoading = false
+                }
+            } catch {
+                print("Erro ao carregar dados iniciais: \(error)")
+                await MainActor.run {
+                    self.isLoading = false
+                }
+            }
+        }
+    }
+    
+    private func handleNameChange(for id: UUID, newName: String) {
+        searchTask?.cancel()
         
-        if !ticket.author.isEmpty {
-            result.removeAll { $0 == ticket.author }
-            if text.isEmpty || ticket.author.localizedCaseInsensitiveContains(text) {
-                result.insert(ticket.author, at: 0)
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            self.suggestedUsers = mockUsers.filter { $0.localizedCaseInsensitiveContains(newName) && $0 != newName }
+            return
+        }
+        
+        searchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
+            guard !Task.isCancelled else { return }
+            do {
+                let users = try await GLPIClient.shared.searchUsers(query: trimmed)
+                guard !Task.isCancelled else { return }
+                
+                await MainActor.run {
+                    var names: [String] = []
+                    for u in users {
+                        names.append(u.name)
+                        self.userIdsMap[u.name] = u.id
+                    }
+                    
+                    if !ticket.author.isEmpty && ticket.author.localizedCaseInsensitiveContains(trimmed) && !names.contains(ticket.author) {
+                        names.insert(ticket.author, at: 0)
+                    }
+                    
+                    self.suggestedUsers = names
+                }
+            } catch {
+                print("Erro ao pesquisar utilizadores: \(error)")
+            }
+        }
+    }
+    
+    private func saveChanges() {
+        isSaving = true
+        
+        Task {
+            do {
+                let selectedType = (tipo == "Pedido") ? 2 : 1
+                
+                let selectedSourceId: Int
+                switch fonte {
+                case "Helpdesk": selectedSourceId = 1
+                case "E-Mail": selectedSourceId = 2
+                case "Telefone": selectedSourceId = 3
+                case "Direto": selectedSourceId = 4
+                case "Escrito": selectedSourceId = 5
+                case "Outro": selectedSourceId = 6
+                case "Formcreator": selectedSourceId = 7
+                default: selectedSourceId = 4
+                }
+                
+                let selectedPriorityId: Int
+                switch prioridade {
+                case .veryLow: selectedPriorityId = 1
+                case .low: selectedPriorityId = 2
+                case .medium: selectedPriorityId = 3
+                case .high: selectedPriorityId = 4
+                case .veryHigh: selectedPriorityId = 5
+                case .major: selectedPriorityId = 6
+                default: selectedPriorityId = 3
+                }
+                
+                let selectedStatusId: Int
+                switch estado {
+                case "Novo": selectedStatusId = 1
+                case "A processar (atribuído)": selectedStatusId = 2
+                case "A processar (planeado)": selectedStatusId = 3
+                case "Aguardando": selectedStatusId = 4
+                case "Finalizado": selectedStatusId = 5
+                case "Encerrado": selectedStatusId = 6
+                default: selectedStatusId = 1
+                }
+                
+                var input: [String: Any] = [
+                    "id": ticket.id,
+                    "type": selectedType,
+                    "requesttypes_id": selectedSourceId,
+                    "priority": selectedPriorityId,
+                    "status": selectedStatusId,
+                    "content": descricao
+                ]
+                
+                if let catId = categoryMap[categoria] {
+                    input["itilcategories_id"] = catId
+                }
+                
+                if !tempoAtendimento.isEmpty {
+                    input["time_to_own"] = formatDisplayToGLPIDate(tempoAtendimento)
+                } else {
+                    input["time_to_own"] = "null"
+                }
+                
+                if !tempoSolucao.isEmpty {
+                    input["time_to_resolve"] = formatDisplayToGLPIDate(tempoSolucao)
+                } else {
+                    input["time_to_resolve"] = "null"
+                }
+                
+                // Gravar alterações no ticket
+                let success = try await GLPIClient.shared.updateTicket(id: ticket.id, input: input)
+                
+                if success {
+                    // Sincronizar Atores
+                    try await syncActors(
+                        ticketId: ticket.id,
+                        currentRequesters: requesterList,
+                        currentTechnicians: atribuidoList
+                    )
+                    
+                    await MainActor.run {
+                        self.isSaving = false
+                        self.isSuccess = true
+                        self.alertMessage = "Ticket atualizado com sucesso!"
+                        self.showAlert = true
+                        
+                        NotificationCenter.default.post(name: NSNotification.Name("TicketUpdated"), object: nil)
+                    }
+                } else {
+                    throw NSError(domain: "GLPIError", code: 0, userInfo: [NSLocalizedDescriptionKey: "Não foi possível gravar as alterações do ticket no servidor."])
+                }
+                
+            } catch {
+                print("Erro ao salvar ticket: \(error)")
+                await MainActor.run {
+                    self.isSaving = false
+                    self.isSuccess = false
+                    self.alertMessage = error.localizedDescription
+                    self.showAlert = true
+                }
+            }
+        }
+    }
+    
+    private func syncActors(ticketId: String, currentRequesters: [TechnicianAssignment], currentTechnicians: [TechnicianAssignment]) async throws {
+        let serverActors = try await GLPIClient.shared.getTicketActors(ticketId: ticketId)
+        
+        var serverReqs: [String: Int] = [:]
+        var serverTechs: [String: Int] = [:]
+        
+        for actor in serverActors {
+            guard let relId = actor["id"] as? Int ?? (actor["id"] as? String).flatMap(Int.init),
+                  let type = actor["type"] as? Int ?? (actor["type"] as? String).flatMap(Int.init) else { continue }
+            
+            let userIdVal = actor["users_id"]
+            var userIdStr = ""
+            if let userDict = userIdVal as? [String: Any], let id = userDict["id"] as? Int {
+                userIdStr = String(id)
+            } else if let userDict = userIdVal as? [String: Any], let idStr = userDict["id"] as? String {
+                userIdStr = idStr
+            } else if let idInt = userIdVal as? Int {
+                userIdStr = String(idInt)
+            } else if let idStr = userIdVal as? String {
+                userIdStr = idStr
+            }
+            
+            if !userIdStr.isEmpty {
+                if type == 1 {
+                    serverReqs[userIdStr] = relId
+                } else if type == 2 {
+                    serverTechs[userIdStr] = relId
+                }
             }
         }
         
-        return result
-    }
-    
-    private func getAssignmentSuggestions(for text: String) -> [String] {
-        return text.isEmpty ? mockUsers : mockUsers.filter { $0.localizedCaseInsensitiveContains(text) && $0 != text }
+        let newReqUserIds = Set(currentRequesters.compactMap { $0.userId }.filter { !$0.isEmpty })
+        for (userId, relId) in serverReqs {
+            if !newReqUserIds.contains(userId) {
+                _ = try await GLPIClient.shared.deleteTicketActor(relationshipId: relId)
+            }
+        }
+        
+        for req in currentRequesters {
+            if let userId = req.userId, !userId.isEmpty {
+                if serverReqs[userId] == nil {
+                    _ = try await GLPIClient.shared.addTicketActor(ticketId: ticketId, userId: userId, type: 1)
+                }
+            }
+        }
+        
+        let newTechUserIds = Set(currentTechnicians.compactMap { $0.userId }.filter { !$0.isEmpty })
+        for (userId, relId) in serverTechs {
+            if !newTechUserIds.contains(userId) {
+                _ = try await GLPIClient.shared.deleteTicketActor(relationshipId: relId)
+            }
+        }
+        
+        for tech in currentTechnicians {
+            if let userId = tech.userId, !userId.isEmpty {
+                if serverTechs[userId] == nil {
+                    _ = try await GLPIClient.shared.addTicketActor(ticketId: ticketId, userId: userId, type: 2)
+                }
+            }
+        }
     }
     
     private func closeOtherPickers(except: String) {
         if except != "type" { isTypeExpanded = false }
         if except != "category" { isCategoryExpanded = false }
         if except != "source" { isSourceExpanded = false }
+        if except != "status" { isStatusExpanded = false }
         if except != "priority" { isPriorityExpanded = false }
         if except != "atendimento" { isAtendimentoExpanded = false }
         if except != "solucao" { isSolucaoExpanded = false }
         
-        // Se except for vazio, estamos a fechar TUDO (clique no fundo)
-        // Se except tiver valor, estamos a abrir um seletor específico (limpamos foco para não chocar)
         focusedId = nil
         focusedField = nil
         hideKeyboard()
@@ -480,8 +982,51 @@ struct TicketEditView: View {
         formatter.dateFormat = "dd/MM/yyyy HH:mm"
         tempoSolucao = formatter.string(from: date)
     }
+    
+    private func parseGLPIDate(_ str: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.date(from: str)
+    }
+
+    private func formatGLPIDateToDisplay(_ str: String) -> String {
+        guard let date = parseGLPIDate(str) else { return "" }
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.dateFormat = "dd/MM/yyyy HH:mm"
+        return formatter.string(from: date)
+    }
+
+    private func formatDisplayToGLPIDate(_ str: String) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "pt_PT")
+        formatter.dateFormat = "dd/MM/yyyy HH:mm"
+        guard let date = formatter.date(from: str) else { return "" }
+        
+        let glpiFormatter = DateFormatter()
+        glpiFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        glpiFormatter.timeZone = TimeZone(secondsFromGMT: 0)
+        glpiFormatter.locale = Locale(identifier: "en_US_POSIX")
+        return glpiFormatter.string(from: date)
+    }
+    
+    private func resolveSourceName(_ value: String) -> String {
+        let str = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if str.isEmpty || str == "null" || str == "0" { return "Direto" }
+        
+        if str.localizedCaseInsensitiveContains("Helpdesk") || str == "1" { return "Helpdesk" }
+        if str.localizedCaseInsensitiveContains("Email") || str.localizedCaseInsensitiveContains("E-Mail") || str == "2" { return "E-Mail" }
+        if str.localizedCaseInsensitiveContains("Phone") || str.localizedCaseInsensitiveContains("Telefone") || str == "3" { return "Telefone" }
+        if str.localizedCaseInsensitiveContains("Direct") || str.localizedCaseInsensitiveContains("Direto") || str == "4" { return "Direto" }
+        if str.localizedCaseInsensitiveContains("Written") || str.localizedCaseInsensitiveContains("Escrito") || str == "5" { return "Escrito" }
+        if str.localizedCaseInsensitiveContains("Other") || str.localizedCaseInsensitiveContains("Outro") || str == "6" { return "Outro" }
+        if str.localizedCaseInsensitiveContains("Formcreator") || str == "7" { return "Formcreator" }
+        
+        return str
+    }
 }
 
 #Preview {
-    TicketEditView(ticket: GLPITicket(id: "1024", name: "Erro Login", requester: "Gonçalo Sousa", author: "Eduardo Lima", assignedTo: "Admin", description: "Desc", date: Date(), priority: .major, status: .new, isMine: true, isAssignedToMe: false))
+    TicketEditView(ticket: GLPITicket(id: "1024", name: "Erro Login", requester: "Gonçalo Sousa", author: "Eduardo Lima", assignedTo: "Admin", description: "Desc", date: Date(), priority: .major, status: .new, rawStatus: "1", isMine: true, isAssignedToMe: false))
 }

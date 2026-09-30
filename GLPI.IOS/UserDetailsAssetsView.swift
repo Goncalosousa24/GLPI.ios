@@ -15,7 +15,7 @@ struct UserDetailsAssetsView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 18, weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(GlpiColors.universalBlue)
                             .padding(12)
                             .glassStyle(cornerRadius: 12)
                     }
@@ -69,6 +69,7 @@ struct UserDetailsAssetsView: View {
                         Spacer(minLength: 120)
                     }
                 }
+                .scrollDismissesKeyboard(.immediately)
             }
         }
         .navigationBarHidden(true)
@@ -117,6 +118,6 @@ struct AssetDetailRow: View {
 
 #Preview {
     UserDetailsAssetsView(userName: "Gonçalo Sousa", assets: [
-        GLPIAsset(name: "MacBook Pro M3", tag: "TAG-402", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Gonçalo Sousa", department: "DSI", serialNumber: "SN-8HX9J2L1")
+        GLPIAsset(realId: 1, name: "MacBook Pro M3", tag: "TAG-402", icon: "desktopcomputer", type: .computer, status: "Ativo", owner: "Gonçalo Sousa", department: "DSI", serialNumber: "SN-8HX9J2L1")
     ])
 }

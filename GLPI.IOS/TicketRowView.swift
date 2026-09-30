@@ -6,17 +6,46 @@ struct TicketRowView: View {
     var selectionColor: Color = GlpiColors.universalBlue
     var isExpanded: Bool = false
     var isDeleteMode: Bool = false
+    var listCategory: String = ""
     var onLongPress: (CGFloat) -> Void = { _ in }
     var onSelect: () -> Void = {}
     @Binding var currentY: CGFloat
+    @AppStorage("isLightMode_V2") private var isLightMode = true
     
-    // Dados de exemplo para expansão
-    private var mockResponses: [TicketResponse] {
+    // Respostas reais do ticket com fallback para mock apenas no modo offline
+    private var displayedResponses: [TicketResponse] {
         if !ticket.responses.isEmpty { return ticket.responses }
-        return [
-            TicketResponse(author: "Suporte Técnico", content: "Estamos a analisar o problema. Pode confirmar se o cabo está bem ligado?", date: Date().addingTimeInterval(-3600), isInternal: false),
-            TicketResponse(author: ticket.requester, content: "Sim, tudo verificado. Continua sem funcionar e as luzes estão apagadas.", date: Date().addingTimeInterval(-1800), isInternal: false)
-        ]
+        if PreferenceManager.shared.isOfflineMode {
+            return [
+                TicketResponse(author: "Suporte Técnico", content: "Estamos a analisar o problema. Pode confirmar se o cabo está bem ligado?", date: Date().addingTimeInterval(-3600), isInternal: false),
+                TicketResponse(author: ticket.requester, content: "Sim, tudo verificado. Continua sem funcionar e as luzes estão apagadas.", date: Date().addingTimeInterval(-1800), isInternal: false)
+            ]
+        }
+        return []
+    }
+    
+    private func getBottomText() -> String {
+        if ticket.status == .deleted {
+            return ""
+        }
+        if listCategory.uppercased() == "PRIORITÁRIOS" {
+            switch ticket.priority {
+            case .high: return "ALTO"
+            case .veryHigh: return "MUITO ALTO"
+            case .major: return "PRINCIPAL"
+            default: return ticket.priority.rawValue.uppercased()
+            }
+        } else {
+            switch ticket.rawStatus {
+            case "1": return "NOVO"
+            case "2": return "A PROCESSAR (ATRIBUÍDO)"
+            case "3": return "A PROCESSAR (PLANEADO)"
+            case "4": return "AGUARDANDO"
+            case "5": return "FINALIZADO"
+            case "6": return "ENCERRADO"
+            default: return ticket.status.rawValue.uppercased()
+            }
+        }
     }
     
     var body: some View {
@@ -69,6 +98,9 @@ struct TicketRowView: View {
                                 .font(.amiko(size: 11, weight: .black))
                                 .foregroundColor(GlpiColors.dynamicBlueText)
                             Spacer()
+                            Text(getBottomText())
+                                .font(.amiko(size: 11, weight: .bold))
+                                .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
                         }
                         
                         HStack {
@@ -120,24 +152,31 @@ struct TicketRowView: View {
                             .font(.amiko(size: 10, weight: .black))
                             .foregroundColor(GlpiColors.dynamicBlueText)
                         
-                        ForEach(mockResponses) { response in
-                            VStack(alignment: .leading, spacing: 8) {
-                                HStack {
-                                    Text(response.author.uppercased())
-                                        .font(.amiko(size: 9, weight: .black))
-                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
-                                    Spacer()
-                                    Text(formatDate(response.date))
-                                        .font(.amiko(size: 9, weight: .bold))
-                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.2))
+                        if displayedResponses.isEmpty {
+                            Text("Sem respostas adicionais.")
+                                .font(.amiko(size: 13, weight: .regular))
+                                .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
+                                .padding(.vertical, 8)
+                        } else {
+                            ForEach(displayedResponses) { response in
+                                VStack(alignment: .leading, spacing: 8) {
+                                    HStack {
+                                        Text(response.author.uppercased())
+                                            .font(.amiko(size: 9, weight: .black))
+                                            .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
+                                        Spacer()
+                                        Text(formatDate(response.date))
+                                            .font(.amiko(size: 9, weight: .bold))
+                                            .foregroundColor(isLightMode ? GlpiColors.universalBlue : .white)
+                                    }
+                                    Text(response.content)
+                                        .font(.amiko(size: 13, weight: .regular))
+                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.7))
                                 }
-                                Text(response.content)
-                                    .font(.amiko(size: 13, weight: .regular))
-                                    .foregroundColor(GlpiColors.dynamicText.opacity(0.7))
+                                .padding(18)
+                                .background(GlpiColors.dynamicText.opacity(0.04))
+                                .cornerRadius(20)
                             }
-                            .padding(18)
-                            .background(GlpiColors.dynamicText.opacity(0.04))
-                            .cornerRadius(20)
                         }
                     }
                     
@@ -171,7 +210,6 @@ struct TicketRowView: View {
             }
         )
         .glassStyle(cornerRadius: 30, isSelection: isSelected, selectionColor: selectionColor)
-        .clipped()
         .animation(.spring(response: 0.5, dampingFraction: 0.8), value: isExpanded)
     }
     

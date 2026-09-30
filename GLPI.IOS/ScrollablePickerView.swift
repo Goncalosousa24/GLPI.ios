@@ -22,10 +22,20 @@ struct ScrollablePickerView: View {
     @State private var contentOffset: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
 
-    // Adiciona "Nenhum" no topo apenas quando solicitado e já existe seleção
+    // Adiciona "Nenhum" no topo apenas quando solicitado e já existe seleção, e garante que o selecionado fica no topo
     private var displayedOptions: [String] {
-        guard showNone && !selected.isEmpty else { return options }
-        return ["— Nenhum —"] + options
+        var baseOptions = options
+        if !selected.isEmpty {
+            if let idx = baseOptions.firstIndex(of: selected) {
+                baseOptions.remove(at: idx)
+                baseOptions.insert(selected, at: 0)
+            } else {
+                baseOptions.insert(selected, at: 0)
+            }
+        }
+        
+        guard showNone && !selected.isEmpty else { return baseOptions }
+        return ["— Nenhum —"] + baseOptions
     }
 
     var body: some View {
@@ -68,7 +78,11 @@ struct ScrollablePickerView: View {
                                 .padding(.horizontal, 8)
                         } else {
                             OptionRow(title: opt, isSelected: selected == opt) {
-                                selected = opt
+                                if selected == opt {
+                                    selected = ""
+                                } else {
+                                    selected = opt
+                                }
                                 onSelect()
                             }
                         }

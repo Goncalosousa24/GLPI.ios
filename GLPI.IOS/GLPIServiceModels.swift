@@ -2,7 +2,7 @@
 //  GLPIServiceModels.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 30/04/2026.
+//  Created by Gonçalo Sousa on 30/04/2026.
 //
 
 @preconcurrency import Foundation
@@ -85,7 +85,9 @@ struct AnyCodable: Codable, Sendable {
     
     init(from decoder: Decoder) throws {
         let container = try decoder.singleValueContainer()
-        if let x = try? container.decode(Int.self) { value = x }
+        if container.decodeNil() {
+            value = "null"
+        } else if let x = try? container.decode(Int.self) { value = x }
         else if let x = try? container.decode(String.self) { value = x }
         else if let x = try? container.decode(Double.self) { value = x }
         else if let x = try? container.decode(Bool.self) { value = x }
@@ -102,5 +104,32 @@ struct AnyCodable: Codable, Sendable {
         else if let x = value as? Bool { try container.encode(x) }
         else if let x = value as? [String: AnyCodable] { try container.encode(x) }
         else if let x = value as? [AnyCodable] { try container.encode(x) }
+    }
+    
+    var stringValue: String {
+        if let str = value as? String {
+            return str
+        }
+        if let intVal = value as? Int {
+            return String(intVal)
+        }
+        if let dblVal = value as? Double {
+            return String(dblVal)
+        }
+        if let boolVal = value as? Bool {
+            return String(boolVal)
+        }
+        if let arr = value as? [AnyCodable] {
+            let elements = arr.map { $0.stringValue }
+            return "[" + elements.joined(separator: ", ") + "]"
+        }
+        if let dict = value as? [String: AnyCodable] {
+            if let nameVal = dict["name"]?.stringValue {
+                return nameVal
+            }
+            let pairs = dict.map { "\($0.key): \($0.value.stringValue)" }
+            return "{" + pairs.joined(separator: ", ") + "}"
+        }
+        return "\(value)"
     }
 }

@@ -1,9 +1,8 @@
 import SwiftUI
 
 struct InventoryView: View {
-    @StateObject private var viewModel = InventoryViewModel()
-    @State private var searchText: String = ""
-    @State private var selectedCategory: String? = nil
+    @Binding var showTabBar: Bool
+    @ObservedObject var viewModel: InventoryViewModel
     
     enum InventorySheet: Identifiable {
         case scanner, create, report, reservations, history
@@ -18,8 +17,25 @@ struct InventoryView: View {
         }
     }
     
+    @AppStorage("isLightMode_V2") var isLightMode = true
     @State private var activeSheet: InventorySheet? = nil
     @State private var filterPageIndex = 0
+    @State private var showLocationFilter = false
+    
+    @State private var quickActionAsset: Asset? = nil
+    @State private var assetForStateChange: Asset? = nil
+    @State private var showStateChangeOverlay = false
+    @State private var lastScrollOffset: CGFloat = 0
+    
+    // Estado para passar ativo para a página de reporte
+    @State private var assetForReport: Asset? = nil
+    
+    // Estados para controlo da UI
+    @State private var showHistoryForAsset = false
+    @State private var selectedAssetForHistory: Asset? = nil
+    
+    // Estado para portas de rede
+    @State private var selectedAssetForPorts: Asset? = nil
     
     let categories = ["Computadores", "Monitores", "Impressoras", "Rede"]
     
@@ -44,18 +60,20 @@ struct InventoryView: View {
     
     var body: some View {
         ZStack {
-            GlpiColors.background.ignoresSafeArea()
+            (isLightMode ? Color.white : Color.black).ignoresSafeArea()
             VStack(spacing: 0) {
                 // Header + Search (Sincronizado com o Dashboard)
                 GLPISearchHeader(
-                    searchText: $searchText,
+                    searchText: $viewModel.searchText,
                     placeholder: "Pesquisar ativos...",
-                    rightIcon: "line.3.horizontal.decrease",
+                    rightIcon: "line.3.horizontal.decrease.circle",
                     isSystemIcon: true,
-                    isRightIconSelected: false,
+                    isRightIconSelected: viewModel.selectedLocation != nil,
                     rightIconAction: {
-                        // Ação de Filtros (Pode abrir um menu ou sheet)
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        withAnimation {
+                            showLocationFilter = true
+                        }
                     },
                     innerRightIcon: "qrcode.viewfinder",
                     innerRightIconAction: {
@@ -69,12 +87,12 @@ struct InventoryView: View {
                 HStack(spacing: 12) {
                     HStack(spacing: 12) {
                         ForEach(currentFilters, id: \.self) { cat in
-                            FilterPill(title: cat, isSelected: selectedCategory == cat, width: pillWidth) {
+                            FilterPill(title: cat, isSelected: viewModel.selectedCategory == cat, width: pillWidth) {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                    if selectedCategory == cat {
-                                        selectedCategory = nil
+                                    if viewModel.selectedCategory == cat {
+                                        viewModel.selectedCategory = nil
                                     } else {
-                                        selectedCategory = cat
+                                        viewModel.selectedCategory = cat
                                     }
                                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                                 }
@@ -132,17 +150,78 @@ struct InventoryView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 25) {
                         ScrollOffsetTracker()
+                            .onPreferenceChange(ScrollDirectionPreferenceKey.self) { value in
+                                if abs(value - lastScrollOffset) > 15 {
+                                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+                                    lastScrollOffset = value
+                                }
+                            }
                         
                         // 2. Asset List (Glass Cards) - Agora logo abaixo dos filtros
                         VStack(alignment: .leading, spacing: 15) {
-                            Text("RECENTES - \(selectedCategory?.uppercased() ?? "TUDO")")
-                                .font(.amiko(size: 14, weight: .bold))
-                                .foregroundColor(GlpiColors.dynamicText.opacity(0.8))
-                                .padding(.horizontal, GlpiMetrics.padding + 5)
-                            
+
                             VStack(spacing: 12) {
                                 ForEach(viewModel.assets) { asset in
                                     AssetRow(asset: asset)
+                                        .onTapGesture {
+                                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            // Futuro: Expandir detalhes do dispositivo
+                                        }
+                                        .onLongPressGesture(minimumDuration: 0.4) {
+                                            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                                quickActionAsset = asset
+                                            }
+                                        }
+                                }
+                                
+                                if viewModel.totalPages > 1 {
+                                    HStack(spacing: 0) {
+                                        Button(action: {
+                                            if viewModel.currentPage > 1 {
+                                                withAnimation(.spring()) {
+                                                    viewModel.currentPage -= 1
+                                                }
+                                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            }
+                                        }) {
+                                            Image(systemName: "chevron.left")
+                                                .font(.system(size: 16, weight: .bold))
+                                                .foregroundColor(GlpiColors.universalBlue)
+                                                .opacity(viewModel.currentPage == 1 ? 0.2 : 1.0)
+                                                .frame(width: 50, height: 50)
+                                        }
+                                        .disabled(viewModel.currentPage == 1)
+                                        
+                                        Spacer()
+                                        
+                                        Rectangle()
+                                            .fill(GlpiColors.dynamicText.opacity(0.15))
+                                            .frame(width: 1, height: 24)
+                                        
+                                        Spacer()
+                                        
+                                        Button(action: {
+                                            if viewModel.currentPage < viewModel.totalPages {
+                                                withAnimation(.spring()) {
+                                                    viewModel.currentPage += 1
+                                                }
+                                                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                            }
+                                        }) {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 16, weight: .bold))
+                                                .foregroundColor(GlpiColors.universalBlue)
+                                                .opacity(viewModel.currentPage == viewModel.totalPages ? 0.2 : 1.0)
+                                                .frame(width: 50, height: 50)
+                                        }
+                                        .disabled(viewModel.currentPage == viewModel.totalPages)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 50)
+                                    .glassStyle(cornerRadius: 15)
+                                    .padding(.top, 10)
                                 }
                             }
                             .padding(.horizontal, GlpiMetrics.padding)
@@ -150,8 +229,8 @@ struct InventoryView: View {
                         
                         // 3. Ações Rápidas (Sincronizado com o Dashboard - "Gêmeos")
                         GLPIHorizontalScrollContainer {
-                            HStack(spacing: GlpiMetrics.actionSpacing) {
-                                let cardWidth = (UIScreen.screenWidth - (GlpiMetrics.padding * 2) - (GlpiMetrics.actionSpacing * 2)) / 3
+                            HStack(spacing: 20) {
+                                let cardWidth = (UIScreen.screenWidth - (GlpiMetrics.padding * 2) - (20 * 2)) / 3
                                 
                                 DashboardQuickActionCard(title: "ADICIONAR", icon: "plus.circle.fill") {
                                     activeSheet = .create
@@ -178,26 +257,134 @@ struct InventoryView: View {
                         
                         Spacer(minLength: 20)
                     }
+                    .background(isLightMode ? Color.white : Color.black)
                 }
+                .background(isLightMode ? Color.white : Color.black)
+                .scrollContentBackground(.hidden)
                 .scrollDismissesKeyboard(.immediately)
+                .refreshable {
+                    viewModel.refreshAssets()
+                    while viewModel.isLoading {
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                }
+            }
+            .blur(radius: (activeSheet != nil || showLocationFilter || quickActionAsset != nil) ? 8 : 0)
+            .animation(.spring(), value: activeSheet != nil || showLocationFilter || quickActionAsset != nil)
+            
+            if viewModel.isLoading {
+                ZStack {
+                    Color.black.opacity(0.15)
+                        .ignoresSafeArea()
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: GlpiColors.universalBlue))
+                        .scaleEffect(1.5)
+                }
+            }
+            
+            if showLocationFilter {
+                InventoryLocationFilterOverlay(isPresented: $showLocationFilter, selectedLocation: $viewModel.selectedLocation)
+            }
+            
+            // Navigation invisível para o Histórico
+            NavigationLink(
+                destination: Group {
+                    if let asset = selectedAssetForHistory {
+                        DeviceTicketHistoryView(asset: asset)
+                    } else {
+                        EmptyView()
+                    }
+                },
+                isActive: $showHistoryForAsset
+            ) {
+                EmptyView()
+            }
+            .hidden()
+            
+            // Overlay de Ações Rápidas
+            if let asset = quickActionAsset {
+                DeviceQuickActionsOverlay(
+                    asset: asset,
+                    onDismiss: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            quickActionAsset = nil
+                        }
+                    },
+                    onReport: {
+                        assetForReport = asset
+                        activeSheet = .report
+                        withAnimation(.spring()) { quickActionAsset = nil }
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                    },
+                    onHistory: {
+                        selectedAssetForHistory = asset
+                        withAnimation(.spring()) { quickActionAsset = nil }
+                        // Navegar para o histórico
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            showHistoryForAsset = true
+                        }
+                    },
+                    onChangeState: {
+                        let assetToChange = asset
+                        withAnimation(.spring()) { quickActionAsset = nil }
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            assetForStateChange = assetToChange
+                            withAnimation {
+                                showStateChangeOverlay = true
+                            }
+                        }
+                    },
+                    onNetworkPorts: {
+                        let assetToPorts = asset
+                        withAnimation(.spring()) { quickActionAsset = nil }
+                        UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                            selectedAssetForPorts = assetToPorts
+                        }
+                    }
+                )
+            }
+            
+            // Overlay de Alterar Estado
+            if showStateChangeOverlay, let asset = assetForStateChange {
+                DeviceStateChangeOverlay(
+                    asset: asset,
+                    isPresented: $showStateChangeOverlay,
+                    onStateChanged: {
+                        viewModel.fetchAssets()
+                    }
+                )
             }
         }
         .frame(width: UIScreen.main.bounds.width)
-        .clipped()
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
             case .scanner:
                 ScannerView { scannedCode in
-                    self.searchText = scannedCode
+                    self.viewModel.searchText = scannedCode
                 }
             case .create:
                 AssetCreateView()
             case .report:
-                AssetReportView()
+                AssetReportView(prefilledAsset: assetForReport)
             case .reservations:
                 ReservationsView()
             case .history:
                 AssetHistoryView()
+            }
+        }
+        .sheet(item: $selectedAssetForPorts) { asset in
+            DeviceNetworkPortsView(asset: asset)
+        }
+        .onChange(of: showLocationFilter) { newValue in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                showTabBar = !newValue && quickActionAsset == nil
+            }
+        }
+        .onChange(of: quickActionAsset?.id) { newValue in
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                showTabBar = (newValue == nil) && !showLocationFilter
             }
         }
     }
@@ -229,10 +416,24 @@ struct AssetRow: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
-            // 1. Nome do Dispositivo (Azul em light mode, Branco em dark mode)
-            Text(asset.name.uppercased())
-                .font(.amiko(size: 16, weight: .black))
-                .foregroundColor(isLightMode ? GlpiColors.universalBlue : .white)
+            HStack(alignment: .top) {
+                // 1. Nome do Dispositivo (Azul em light mode, Branco em dark mode)
+                Text(asset.name.uppercased())
+                    .font(.amiko(size: 16, weight: .black))
+                    .foregroundColor(isLightMode ? GlpiColors.universalBlue : .white)
+                    
+                Spacer()
+                
+                if !asset.status.isEmpty && asset.status.lowercased() != "nenhum" && asset.status.lowercased() != "null" {
+                    Text(asset.status.uppercased())
+                        .font(.amiko(size: 9, weight: .bold))
+                        .frame(width: 75)
+                        .padding(.vertical, 4)
+                        .background(GlpiColors.universalBlue)
+                        .foregroundColor(.white)
+                        .cornerRadius(6)
+                }
+            }
             
             // 2. Utilizador
             Text(asset.owner?.uppercased() ?? "NÃO ATRIBUÍDO")
@@ -254,6 +455,7 @@ struct AssetRow: View {
             }
         }
         .padding(20)
+        .frame(height: GlpiMetrics.ticketHeight)
         .glassStyle(cornerRadius: 22)
     }
 }
@@ -276,5 +478,5 @@ struct InfoColumn: View {
 }
 
 #Preview {
-    InventoryView()
+    InventoryView(showTabBar: .constant(true), viewModel: InventoryViewModel())
 }

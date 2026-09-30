@@ -2,7 +2,7 @@
 //  GlpiDesign.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 17/04/2026.
+//  Created by Gonçalo Sousa on 17/04/2026.
 //
 
 import SwiftUI
@@ -38,9 +38,12 @@ struct GlpiColors {
     static let secondary = dynamicOffWhite // Unificado para consistência
     static var accent: Color { universalBlue }
     
+    private static var isLight: Bool {
+        UserDefaults.standard.object(forKey: "isLightMode_V2") as? Bool ?? true
+    }
+    
     static var background: Color {
-        @AppStorage("isLightMode_V2") var isLightMode = true
-        return isLightMode ? .white : .black
+        isLight ? .white : .black
     }
     
     // Tons Premium Universais (Dashboard & Menus) - Agora mais profundos para integrar com fundoIOS
@@ -91,26 +94,22 @@ struct GlpiColors {
     }
 
     static var dynamicText: Color {
-        @AppStorage("isLightMode_V2") var isLightMode = true
-        return isLightMode ? .black : .white
+        isLight ? .black : .white
     }
     
     static var dynamicOffWhite: Color {
-        @AppStorage("isLightMode_V2") var isLightMode = true
-        // Fundo dos Cartões (Quadrados/Retângulos): Cinzento Sólido Universal
-        return isLightMode ? Color(white: 0.96) : Color(white: 0.12)
+        // Fundo dos Cartões (Quadrados/Retângulos): Off-white em Light Mode, Cinzento Quase Preto em Dark Mode
+        isLight ? Color(white: 0.97) : Color(hexString: "0C0C0D")
     }
     
     static var dynamicBorder: Color {
-        @AppStorage("isLightMode_V2") var isLightMode = true
-        // Cinzento Sólido com Contraste: Mais visível para definir os cartões
-        return isLightMode ? Color(white: 0.85) : Color(white: 0.3)
+        // Borda dos Cartões: Cinzento Escuro Discreto Premium
+        isLight ? Color(white: 0.85) : Color(hexString: "1C1C1E")
     }
     
     static let universalBlue = Color(hexString: "0B3CC4") // Azul Real Elétrico Escuro Premium (Vibrante e Profundo)
     static var dynamicBlueText: Color {
-        @AppStorage("isLightMode_V2") var isLightMode = true
-        return isLightMode ? universalBlue : .white
+        isLight ? universalBlue : .white
     }
     static let deleteRed = Color(red: 1.0, green: 0.1, blue: 0.1)       // Vermelho de Alerta Premium
 }
@@ -189,8 +188,8 @@ extension View {
     }
     
     // Estilo de Vidro Radicalmente Transparente (ESTRUTURA ORIGINAL)
-    func glassStyle(cornerRadius: CGFloat = 16, isSelection: Bool = false, selectionColor: Color = GlpiColors.universalBlue, useWhiteBackground: Bool = false) -> some View {
-        self.modifier(GlassModifier(cornerRadius: cornerRadius, isSelection: isSelection, selectionColor: selectionColor, useWhiteBackground: useWhiteBackground))
+    func glassStyle(cornerRadius: CGFloat = 16, isSelection: Bool = false, selectionColor: Color = GlpiColors.universalBlue, useWhiteBackground: Bool = false, hasShadow: Bool = true) -> some View {
+        self.modifier(GlassModifier(cornerRadius: cornerRadius, isSelection: isSelection, selectionColor: selectionColor, useWhiteBackground: useWhiteBackground, hasShadow: hasShadow))
     }
     
     // Novo Padrão de Vidro Premium (ESTRUTURA ORIGINAL)
@@ -305,6 +304,7 @@ struct GLPITextField: View {
     var activeIcon: String? = nil
     
     @FocusState private var isFocused: Bool
+    @State private var isPasswordVisible: Bool = false
     
     var body: some View {
         HStack(spacing: 12) {
@@ -324,11 +324,28 @@ struct GLPITextField: View {
             }
             
             if isSecure {
-                SecureField(placeholder, text: $text)
-                    .font(.amiko(size: 16))
-                    .foregroundColor(GlpiColors.dynamicText)
-                    .focused($isFocused)
-                    .tint(GlpiColors.universalBlue)
+                if isPasswordVisible {
+                    TextField(placeholder, text: $text)
+                        .font(.amiko(size: 16))
+                        .foregroundColor(GlpiColors.dynamicText)
+                        .autocapitalization(.none)
+                        .focused($isFocused)
+                        .tint(GlpiColors.universalBlue)
+                } else {
+                    SecureField(placeholder, text: $text)
+                        .font(.amiko(size: 16))
+                        .foregroundColor(GlpiColors.dynamicText)
+                        .focused($isFocused)
+                        .tint(GlpiColors.universalBlue)
+                }
+                
+                Button(action: {
+                    isPasswordVisible.toggle()
+                }) {
+                    Image(systemName: isPasswordVisible ? "eye.slash.fill" : "eye.fill")
+                        .foregroundColor(GlpiColors.dynamicText.opacity(isFocused ? 0.8 : 0.5))
+                        .font(.system(size: 16, weight: .medium))
+                }
             } else {
                 TextField(placeholder, text: $text)
                     .font(.amiko(size: 16))
@@ -367,7 +384,6 @@ struct GLPIButton: View {
             .frame(height: 50)
             .background(GlpiColors.primaryGradient)
             .cornerRadius(12)
-            .shadow(color: Color.black.opacity(0.3), radius: 5, x: 0, y: 3)
         }
         .disabled(isLoading)
     }
@@ -402,8 +418,7 @@ struct DashboardQuickActionCard: View {
                 Image(systemName: icon)
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundColor(finalColor)
-                    .frame(width: 32, height: 32, alignment: .center) // Frame fixo total
-                    .shadow(color: finalColor.opacity(0.3), radius: 5)
+                    .frame(width: 32, height: 32, alignment: .center)
                 
                 if !title.isEmpty {
                     Text(title.uppercased())
@@ -418,7 +433,7 @@ struct DashboardQuickActionCard: View {
         }
         .frame(maxWidth: .infinity)
         .frame(height: GlpiMetrics.actionCardHeight)
-        .glassStyle(cornerRadius: 22)
+        .glassStyle(cornerRadius: 22, hasShadow: false)
     }
 }
 
@@ -555,6 +570,9 @@ struct DashboardStatCard: View {
     
     @State private var displayValue: Int = 0
     @State private var isPressed = false
+    @State private var diff: Int = 0
+    @State private var showDiffBadge = false
+    @State private var hasAppeared = false
     
     var body: some View {
         Button(action: {
@@ -563,9 +581,29 @@ struct DashboardStatCard: View {
             action()
         }) {
             VStack(alignment: .center, spacing: 6) {
-                Text("\(displayValue)")
-                    .font(.system(size: 38, weight: .heavy, design: .rounded))
-                    .foregroundColor(GlpiColors.universalBlue)
+                ZStack {
+                    Text("\(displayValue)")
+                        .font(.system(size: 38, weight: .heavy, design: .rounded))
+                        .foregroundColor(GlpiColors.universalBlue)
+                        .contentTransition(.numericText(value: Double(displayValue)))
+                    
+                    if showDiffBadge {
+                        Text(diff > 0 ? "+\(diff)" : "\(diff)")
+                            .font(.system(size: 14, weight: .bold, design: .rounded))
+                            .foregroundColor(GlpiColors.universalBlue)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(
+                                Capsule()
+                                    .fill(GlpiColors.universalBlue.opacity(0.15))
+                            )
+                            .offset(x: 35, y: diff > 0 ? -15 : 15)
+                            .transition(.asymmetric(
+                                insertion: .scale.combined(with: .opacity).combined(with: .offset(y: diff > 0 ? -10 : 10)),
+                                removal: .opacity.combined(with: .offset(y: diff > 0 ? -25 : 25))
+                            ))
+                    }
+                }
                 
                 Text(title)
                     .font(.amiko(size: 10, weight: .black))
@@ -574,38 +612,55 @@ struct DashboardStatCard: View {
             .frame(maxWidth: .infinity)
             .frame(height: 110)
             .glassStyle(cornerRadius: 22)
+            .id(trigger)
+            .transition(.magicCube)
             .scaleEffect(isPressed ? 0.95 : 1.0)
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isPressed)
         }
         .buttonStyle(PlainButtonStyle())
         .onAppear {
-            runCountAnimation()
-        }
-        .onChange(of: trigger) { _, _ in
-            runCountAnimation()
-        }
-        .onChange(of: value) { _, _ in
-            runCountAnimation()
-        }
-    }
-    
-    private func runCountAnimation() {
-        guard value > 0 else {
             displayValue = 0
-            return
-        }
-        
-        displayValue = 0
-        let steps = 40
-        let duration = 0.8 // Um pouco mais rápido para ser mais dinâmico
-        let interval = duration / Double(steps)
-        for i in 0...steps {
-            DispatchQueue.main.asyncAfter(deadline: .now() + (Double(i) * interval)) {
-                let nextValue = Int(Double(value) * Double(i) / Double(steps))
-                // Usamos withAnimation apenas para o feedback visual do número a mudar
-                withAnimation(.spring(response: 0.1, dampingFraction: 0.8)) {
-                    self.displayValue = nextValue
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if value != 0 {
+                    diff = value
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                        showDiffBadge = true
+                    }
                 }
+                withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                    displayValue = value
+                }
+                if value != 0 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        withAnimation(.easeOut(duration: 0.5)) {
+                            showDiffBadge = false
+                        }
+                    }
+                }
+                hasAppeared = true
+            }
+        }
+        .onChange(of: value) { oldValue, newValue in
+            if hasAppeared {
+                let difference = newValue - oldValue
+                if difference != 0 {
+                    diff = difference
+                    withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                        showDiffBadge = true
+                    }
+                    
+                    withAnimation(.spring(response: 0.6, dampingFraction: 0.7)) {
+                        displayValue = newValue
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        withAnimation(.easeOut(duration: 0.5)) {
+                            showDiffBadge = false
+                        }
+                    }
+                }
+            } else {
+                displayValue = newValue
             }
         }
     }
@@ -646,7 +701,7 @@ struct ActivityRow: View {
     
     private func statusColor(_ status: String) -> Color {
         switch status.lowercased() {
-        case "resolvido": return GlpiColors.dynamicText.opacity(0.4)
+        case "finalizado": return GlpiColors.dynamicText.opacity(0.4)
         default: return GlpiColors.dynamicBlueText
         }
     }
@@ -659,14 +714,15 @@ struct GlassModifier: ViewModifier {
     let isSelection: Bool
     let selectionColor: Color
     var useWhiteBackground: Bool = false
+    var hasShadow: Bool = true
     @AppStorage("isLightMode_V2") var isLightMode = true
     
     func body(content: Content) -> some View {
         content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(GlpiColors.dynamicOffWhite)
-                    .shadow(color: isLightMode ? Color.clear : Color.black.opacity(0.3), radius: 12, x: 0, y: 6)
+                    .fill(useWhiteBackground ? (isLightMode ? Color.white : Color.black) : GlpiColors.dynamicOffWhite)
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius)
@@ -714,7 +770,6 @@ struct TabBarGlassModifier: ViewModifier {
                 GlpiColors.universalBlue
                     .clipShape(Capsule())
             )
-            .shadow(color: Color.black.opacity(isLightMode ? 0.1 : 0.4), radius: 20, x: 0, y: 10)
     }
 }
 
@@ -742,12 +797,19 @@ struct GLPISearchHeader: View {
     var leftIcon: String? = nil
     var leftIconAction: (() -> Void)? = nil
     var isLeftSystemIcon: Bool = true
+    var isLeftIconSelected: Bool = false
     var rightIcon: String? = nil
     var isSystemIcon: Bool = false
     var isRightIconSelected: Bool = false
     var rightIconAction: (() -> Void)? = nil
+    var filterIcon: String? = nil
+    var isFilterIconSelected: Bool = false
+    var filterIconAction: (() -> Void)? = nil
+    var filterMenu: AnyView? = nil
     var innerRightIcon: String? = nil
     var innerRightIconAction: (() -> Void)? = nil
+    
+    @FocusState private var isFocused: Bool
     
     var body: some View {
         HStack(spacing: 12) {
@@ -768,10 +830,12 @@ struct GLPISearchHeader: View {
                                 .frame(width: 22, height: 22)
                         }
                     }
-                    .foregroundColor(GlpiColors.dynamicText)
+                    .foregroundColor(isLeftIconSelected ? GlpiColors.universalBlue : GlpiColors.dynamicText.opacity(0.4))
                     .frame(width: GlpiMetrics.iconButtonSize, height: GlpiMetrics.iconButtonSize)
-                    .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, useWhiteBackground: true)
+                    .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, isSelection: isLeftIconSelected)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(NoHighlightButtonStyle())
             }
             
             // Barra de Pesquisa
@@ -780,23 +844,58 @@ struct GLPISearchHeader: View {
                     .foregroundColor(GlpiColors.universalBlue)
                 
                 TextField("", text: $searchText, prompt: Text(placeholder).foregroundColor(GlpiColors.dynamicText.opacity(0.3)))
+                    .focused($isFocused)
                     .foregroundColor(GlpiColors.dynamicText)
                     .font(.amiko(size: 16))
                 
                 if let innerIcon = innerRightIcon {
-                    Button(action: {
-                        innerRightIconAction?()
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    }) {
-                        Image(systemName: innerIcon)
-                            .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
-                            .font(.system(size: 18, weight: .semibold))
-                    }
+                    Image(systemName: innerIcon)
+                        .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
+                        .font(.system(size: 18, weight: .semibold))
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            innerRightIconAction?()
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        }
                 }
             }
             .padding(.horizontal, 16)
             .frame(height: GlpiMetrics.headerHeight)
-            .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, useWhiteBackground: true)
+            .glassStyle(cornerRadius: GlpiMetrics.cornerRadius)
+            .overlay(
+                RoundedRectangle(cornerRadius: GlpiMetrics.cornerRadius)
+                    .stroke(isFocused ? GlpiColors.universalBlue : Color.clear, lineWidth: isFocused ? GlpiMetrics.UNIVERSAL_ACTIVE_BORDER_WIDTH : 0)
+            )
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isFocused)
+            
+            // Botão Opcional de Filtro à Esquerda do Botão Direito
+            if let fIcon = filterIcon {
+                if let menuContent = filterMenu {
+                    Menu {
+                        menuContent
+                    } label: {
+                        Image(systemName: fIcon)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isFilterIconSelected ? GlpiColors.universalBlue : GlpiColors.dynamicText.opacity(0.4))
+                            .frame(width: GlpiMetrics.iconButtonSize, height: GlpiMetrics.iconButtonSize)
+                            .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, isSelection: isFilterIconSelected)
+                            .contentShape(Rectangle())
+                    }
+                } else {
+                    Button(action: {
+                        filterIconAction?()
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    }) {
+                        Image(systemName: fIcon)
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundColor(isFilterIconSelected ? GlpiColors.universalBlue : GlpiColors.dynamicText.opacity(0.4))
+                            .frame(width: GlpiMetrics.iconButtonSize, height: GlpiMetrics.iconButtonSize)
+                            .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, isSelection: isFilterIconSelected)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(NoHighlightButtonStyle())
+                }
+            }
             
             // Botão Opcional à Direita (ex: Perfil ou Filtro)
             if let icon = rightIcon {
@@ -818,8 +917,10 @@ struct GLPISearchHeader: View {
                     }
                     .foregroundColor(isRightIconSelected ? GlpiColors.universalBlue : GlpiColors.dynamicText.opacity(0.4))
                     .frame(width: GlpiMetrics.iconButtonSize, height: GlpiMetrics.iconButtonSize)
-                    .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, isSelection: isRightIconSelected, useWhiteBackground: true)
+                    .glassStyle(cornerRadius: GlpiMetrics.cornerRadius, isSelection: isRightIconSelected)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(NoHighlightButtonStyle())
             }
         }
         .padding(.horizontal, GlpiMetrics.padding)
@@ -832,46 +933,55 @@ struct GLPISearchHeader: View {
 struct GLPIHorizontalScrollContainer<Content: View>: View {
     let content: Content
     @State private var scrollProgress: CGFloat = 0
-    
+
     init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
-    
+
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             ScrollView(.horizontal, showsIndicators: false) {
                 content
+                    .padding(.vertical, 15)
                     .background(
                         GeometryReader { geo in
-                            let minX = geo.frame(in: .global).minX
                             Color.clear
-                                .onChange(of: minX) { _, newValue in
-                                    let screenWidth = UIScreen.screenWidth
-                                    let totalWidth = geo.size.width
-                                    let scrollableWidth = totalWidth - screenWidth
-                                    
-                                    if scrollableWidth > 0 {
-                                        let offset = -newValue
-                                        let progress = max(0, min(1, offset / scrollableWidth))
-                                        scrollProgress = progress
-                                    }
+                                .onAppear {
+                                    updateProgress(geo: geo)
+                                }
+                                .onChange(of: geo.frame(in: .global).minX) { _, _ in
+                                    updateProgress(geo: geo)
                                 }
                         }
                     )
             }
-            
-            // Barra de Progresso Universal (Cápsula)
+            .clipped()
+
+            // Barra de Progresso Universal (Cápsula Azul)
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(GlpiColors.universalBlue.opacity(0.1))
+                    .fill(GlpiColors.universalBlue.opacity(0.15))
                     .frame(width: GlpiMetrics.scrollIndicatorWidth, height: GlpiMetrics.scrollIndicatorHeight)
-                
+
                 Capsule()
                     .fill(GlpiColors.universalBlue)
-                    .frame(width: (GlpiMetrics.scrollIndicatorWidth * 0.3) + (GlpiMetrics.scrollIndicatorWidth * 0.7 * scrollProgress), height: GlpiMetrics.scrollIndicatorHeight)
+                    .frame(
+                        width: (GlpiMetrics.scrollIndicatorWidth * 0.35) + (GlpiMetrics.scrollIndicatorWidth * 0.65 * scrollProgress),
+                        height: GlpiMetrics.scrollIndicatorHeight
+                    )
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: scrollProgress)
             }
             .frame(maxWidth: .infinity, alignment: .center)
         }
+    }
+
+    private func updateProgress(geo: GeometryProxy) {
+        let screenWidth = UIScreen.screenWidth
+        let totalWidth = geo.size.width
+        let scrollableWidth = totalWidth - screenWidth
+        guard scrollableWidth > 0 else { return }
+        let offset = -geo.frame(in: .global).minX
+        scrollProgress = max(0, min(1, offset / scrollableWidth))
     }
 }
 
@@ -914,6 +1024,7 @@ struct GLPIList<Content: View>: View {
 struct TechnicianAssignment: Identifiable, Hashable {
     let id = UUID()
     var name: String
+    var userId: String? = nil
 }
 
 struct AssignmentRowView: View {
@@ -1028,3 +1139,42 @@ struct AssignmentRowView: View {
         }
     }
 }
+
+struct NoHighlightButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+    }
+}
+
+// MARK: - Transições Especiais
+struct MagicCubeTransitionModifier: ViewModifier {
+    let angle: Double
+    let opacity: Double
+    
+    func body(content: Content) -> some View {
+        content
+            .rotation3DEffect(
+                .degrees(angle),
+                axis: (x: 1.0, y: 0.0, z: 0.0),
+                anchor: angle > 0 ? .bottom : .top,
+                perspective: 0.5
+            )
+            .opacity(opacity)
+    }
+}
+
+extension AnyTransition {
+    static var magicCube: AnyTransition {
+        .asymmetric(
+            insertion: .modifier(
+                active: MagicCubeTransitionModifier(angle: 90, opacity: 0.0),
+                identity: MagicCubeTransitionModifier(angle: 0, opacity: 1.0)
+            ),
+            removal: .modifier(
+                active: MagicCubeTransitionModifier(angle: -90, opacity: 0.0),
+                identity: MagicCubeTransitionModifier(angle: 0, opacity: 1.0)
+            )
+        )
+    }
+}
+

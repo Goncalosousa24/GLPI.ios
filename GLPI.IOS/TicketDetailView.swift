@@ -24,7 +24,7 @@ struct TicketDetailView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 22, weight: .semibold))
-                            .foregroundColor(GlpiColors.dynamicText)
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
                     .padding(.leading, GlpiMetrics.padding + 5)
                     
@@ -104,6 +104,7 @@ struct TicketDetailView: View {
                     }
                     .padding(.top, 20)
                 }
+                .scrollDismissesKeyboard(.immediately)
             }
         }
         .navigationBarHidden(true)
@@ -154,6 +155,7 @@ struct ResponseBubble: View {
         date: Date(),
         priority: .high,
         status: .new,
+        rawStatus: "1",
         isMine: true,
         isAssignedToMe: false
     ))

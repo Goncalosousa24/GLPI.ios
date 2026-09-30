@@ -69,7 +69,7 @@ struct ScannerView: View {
                     Button(action: { dismiss() }) {
                         Image(systemName: GlpiMetrics.universalBackIcon)
                             .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
-                            .foregroundColor(.white)
+                            .foregroundColor(GlpiColors.universalBlue)
                     }
                     .padding(.leading, 5)
                     

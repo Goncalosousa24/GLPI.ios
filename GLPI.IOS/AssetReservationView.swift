@@ -23,16 +23,18 @@ struct AssetReservationView: View {
     @State private var reservations: [DayReservation] = []
     @State private var requester = TechnicianAssignment(name: "")
     @State private var reservationComment = ""
+    @State private var isLoading = true
     
     // Controlo de Calendário
     @State private var currentMonth: Date = Date()
     
-    // Novas variáveis para simular reservas existentes
+    // Reservas existentes carregadas do GLPI
+    @State private var existingReservations: [ExistingReservation] = []
     @State private var selectedExistingReservation: ExistingReservation?
-    let mockExistingReservations: [ExistingReservation]
+    @State private var showDeleteConfirmation = false
     
     struct ExistingReservation: Identifiable {
-        let id = UUID()
+        let id: Int // ID da reserva no GLPI
         let date: Date
         let user: String
         let comment: String
@@ -40,8 +42,10 @@ struct AssetReservationView: View {
         let end: String
     }
     
-    // Mock de utilizadores para sugestões (Padronizado com Tickets)
+    // Mock de utilizadores para sugestões
     private let mockUsers = ["Gonçalo Sousa", "Maria Silva", "João Mendes", "Ana Costa", "Pedro Alves", "Sónia Luz", "Rui Santos", "Carla Dias", "Nuno Lima", "Eduardo Lima", "Beatriz Silva", "Carlos Mendes", "Diana Rose"]
+    @State private var usersSuggestions: [String] = []
+    @State private var allUsers: [(id: String, name: String)] = []
     
     @FocusState private var focusedField: Field?
     @FocusState private var focusedId: UUID?
@@ -58,7 +62,6 @@ struct AssetReservationView: View {
         let range = calendar.range(of: .day, in: .month, for: startOfMonth)!
         
         // Calcular o dia da semana do primeiro dia do mês (1 = Domingo, 2 = Segunda...)
-        // Queremos Segunda como primeiro dia (2 no sistema US)
         var firstWeekday = calendar.component(.weekday, from: startOfMonth) - 2
         if firstWeekday < 0 { firstWeekday += 7 } // Ajuste para que Segunda seja 0
         
@@ -70,23 +73,11 @@ struct AssetReservationView: View {
             }
         }
         
-        // Preencher até 42 dias para manter 6 semanas fixas (evita saltos de tamanho)
         while days.count < 42 {
             days.append(nil)
         }
         
         return days
-    }
-    
-    init(asset: ReservationAsset) {
-        self.asset = asset
-        
-        // Simular algumas reservas já existentes
-        let cal = Calendar.current
-        self.mockExistingReservations = [
-            ExistingReservation(date: cal.date(byAdding: .day, value: 2, to: Date())!, user: "MARIA SILVA", comment: "Necessário para inventário local.", start: "09:00", end: "13:00"),
-            ExistingReservation(date: cal.date(byAdding: .day, value: 5, to: Date())!, user: "JOÃO MENDES", comment: "Apresentação na sala de reuniões.", start: "14:30", end: "18:00")
-        ]
     }
     
     var body: some View {
@@ -181,7 +172,6 @@ struct AssetReservationView: View {
                                                 .frame(width: 32, height: 32)
                                             }
                                         } else {
-                                            // Espaço vazio para alinhar dias da semana
                                             Color.clear
                                                 .frame(width: 32, height: 32)
                                         }
@@ -229,7 +219,7 @@ struct AssetReservationView: View {
                                         assignment: $requester,
                                         focusedId: $focusedId,
                                         showDelete: false,
-                                        suggestions: getSuggestions(for: requester.name),
+                                        suggestions: usersSuggestions,
                                         onDelete: {}
                                     )
                                 }
@@ -246,7 +236,9 @@ struct AssetReservationView: View {
                         // 5. Botão Reservar
                         Button(action: {
                             UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                            dismiss()
+                            Task {
+                                await confirmarReservas()
+                            }
                         }) {
                             Text(reservations.isEmpty ? "SELECIONE UM DIA" : (requester.name.isEmpty ? "FALTA O NOME" : "CONFIRMAR \(reservations.count) RESERVAS"))
                                 .font(.amiko(size: 15, weight: .black))
@@ -265,18 +257,69 @@ struct AssetReservationView: View {
                     }
                     .padding(.horizontal, 16)
                     .padding(.top, 10)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            focusedField = nil
+                            focusedId = nil
+                            hideKeyboard()
+                        }
+                    }
+                }
+            }
+            
+            if isLoading {
+                ZStack {
+                    Color.black.opacity(0.15)
+                        .ignoresSafeArea()
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: GlpiColors.universalBlue))
+                        .scaleEffect(1.5)
                 }
             }
         }
         .preferredColorScheme(isLightMode ? .light : .dark)
+        .onAppear {
+            let uName = PreferenceManager.shared.userName ?? "Gonçalo Sousa"
+            let formattedName = formatarStringNome(uName) ?? uName
+            requester = TechnicianAssignment(name: formattedName, userId: String(PreferenceManager.shared.userId))
+            
+            isLoading = true
+            Task {
+                await carregarReservasExistentes()
+                updateSuggestions(query: "")
+                await MainActor.run {
+                    self.isLoading = false
+                }
+            }
+        }
+        .onChange(of: requester.name) { newValue in
+            if focusedId == requester.id {
+                updateSuggestions(query: newValue)
+            }
+        }
         .sheet(item: $selectedExistingReservation) { res in
             existingReservationDetailView(res)
-                .presentationDetents([.height(300)])
+                .presentationDetents([.height(350)])
                 .presentationDragIndicator(.hidden)
+        }
+        .alert(isPresented: $showDeleteConfirmation) {
+            Alert(
+                title: Text("ELIMINAR RESERVA"),
+                message: Text("Tem a certeza que deseja eliminar esta reserva definitivamente?"),
+                primaryButton: .destructive(Text("ELIMINAR")) {
+                    if let res = selectedExistingReservation {
+                        Task {
+                            await eliminarReserva(id: res.id)
+                        }
+                    }
+                },
+                secondaryButton: .cancel(Text("CANCELAR"))
+            )
         }
     }
     
-    // MARK: - Helpers
+    // MARK: - API / Logic Methods
     
     private func changeMonth(by amount: Int) {
         if let newDate = calendar.date(byAdding: .month, value: amount, to: currentMonth) {
@@ -294,8 +337,156 @@ struct AssetReservationView: View {
     }
     
     private func getExistingReservation(for date: Date) -> ExistingReservation? {
-        mockExistingReservations.first { calendar.isDate($0.date, inSameDayAs: date) }
+        existingReservations.first { calendar.isDate($0.date, inSameDayAs: date) }
     }
+    
+    private func carregarReservasExistentes() async {
+        do {
+            let resList = try await GLPIClient.shared.getReservationsForItem(resItemId: asset.reservationItemsId)
+            
+            let sdf = DateFormatter()
+            sdf.dateFormat = "yyyy-MM-dd HH:mm:ss"
+            sdf.timeZone = TimeZone(secondsFromGMT: 0)
+            
+            let timeSdf = DateFormatter()
+            timeSdf.dateFormat = "HH:mm"
+            
+            var loaded: [ExistingReservation] = []
+            for res in resList {
+                guard let id = res["id"] as? Int ?? (res["id"] as? String).flatMap(Int.init),
+                      let beginStr = res["begin"] as? String,
+                      let endStr = res["end"] as? String else { continue }
+                
+                let beginDate = sdf.date(from: beginStr) ?? Date()
+                let endDate = sdf.date(from: endStr) ?? Date()
+                
+                var userName = "N/A"
+                if let uField = res["users_id"] {
+                    if let uArr = uField as? [Any], uArr.count > 1, let uName = uArr[1] as? String {
+                        userName = uName
+                    } else if let uDict = uField as? [String: Any], let uName = uDict["name"] as? String {
+                        userName = uName
+                    } else {
+                        userName = String(describing: uField)
+                    }
+                }
+                
+                let formattedName = formatarStringNome(userName) ?? userName
+                let comment = res["comment"] as? String ?? ""
+                
+                let startStr = timeSdf.string(from: beginDate)
+                let endStrTime = timeSdf.string(from: endDate)
+                
+                loaded.append(ExistingReservation(
+                    id: id,
+                    date: beginDate,
+                    user: formattedName,
+                    comment: comment,
+                    start: startStr,
+                    end: endStrTime
+                ))
+            }
+            
+            await MainActor.run {
+                self.existingReservations = loaded
+            }
+        } catch {
+            print("Erro ao carregar reservas existentes: \(error)")
+        }
+    }
+    
+    private func eliminarReserva(id: Int) async {
+        await MainActor.run {
+            self.isLoading = true
+        }
+        
+        do {
+            let success = try await GLPIClient.shared.deleteReservation(id: id)
+            if success {
+                await carregarReservasExistentes()
+            }
+        } catch {
+            print("Erro ao eliminar reserva: \(error)")
+        }
+        
+        await MainActor.run {
+            self.selectedExistingReservation = nil
+            self.isLoading = false
+        }
+    }
+    
+    private func confirmarReservas() async {
+        await MainActor.run {
+            self.isLoading = true
+        }
+        
+        let sdf = DateFormatter()
+        sdf.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        sdf.timeZone = TimeZone(secondsFromGMT: 0)
+        
+        let userId = Int(requester.userId ?? "") ?? PreferenceManager.shared.userId
+        
+        var allSucceeded = true
+        for res in reservations {
+            let calendar = Calendar.current
+            
+            let startComponents = calendar.dateComponents([.hour, .minute], from: res.startTime)
+            let endComponents = calendar.dateComponents([.hour, .minute], from: res.endTime)
+            
+            guard let finalStart = calendar.date(bySettingHour: startComponents.hour ?? 9, minute: startComponents.minute ?? 0, second: 0, of: res.date),
+                  let finalEnd = calendar.date(bySettingHour: endComponents.hour ?? 18, minute: endComponents.minute ?? 0, second: 0, of: res.date) else {
+                continue
+            }
+            
+            let startStr = sdf.string(from: finalStart)
+            let endStr = sdf.string(from: finalEnd)
+            
+            do {
+                let success = try await GLPIClient.shared.createReservation(
+                    reservationItemsId: asset.reservationItemsId,
+                    begin: startStr,
+                    end: endStr,
+                    comment: reservationComment,
+                    userId: userId
+                )
+                if !success {
+                    allSucceeded = false
+                }
+            } catch {
+                print("Erro ao criar reserva: \(error)")
+                allSucceeded = false
+            }
+        }
+        
+        await MainActor.run {
+            self.isLoading = false
+            if allSucceeded {
+                dismiss()
+            } else {
+                dismiss()
+            }
+        }
+    }
+    
+    private func updateSuggestions(query: String) {
+        Task {
+            do {
+                let results = try await GLPIClient.shared.searchUsers(query: query)
+                await MainActor.run {
+                    self.allUsers = results.map { (id: $0.id, name: formatarStringNome($0.name) ?? $0.name) }
+                    self.usersSuggestions = self.allUsers.map { $0.name }
+                    
+                    if let matched = self.allUsers.first(where: { $0.name.lowercased() == query.lowercased() }) {
+                        self.requester.userId = matched.id
+                    }
+                }
+            } catch {
+                print("Erro a pesquisar utilizadores: \(error)")
+            }
+        }
+    }
+    
+    // MARK: - Subcomponents
     
     private func existingReservationDetailView(_ res: ExistingReservation) -> some View {
         ZStack {
@@ -312,13 +503,6 @@ struct AssetReservationView: View {
                             .foregroundColor(GlpiColors.dynamicText)
                     }
                     Spacer()
-                    Text("\(res.start) - \(res.end)")
-                        .font(.inconsolata(size: 14, weight: .bold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(GlpiColors.universalBlue.opacity(0.1))
-                        .foregroundColor(GlpiColors.universalBlue)
-                        .cornerRadius(10)
                 }
                 
                 VStack(alignment: .leading, spacing: 12) {
@@ -333,31 +517,43 @@ struct AssetReservationView: View {
                             .font(.amiko(size: 14, weight: .black))
                     }
                     
-                                // Comentário com estilo de 'citação' elegante
-                                HStack(spacing: 15) {
-                                    Rectangle()
-                                        .fill(GlpiColors.universalBlue.opacity(0.3))
-                                        .frame(width: 3)
-                                        .cornerRadius(1.5)
-                                    
-                                    Text(res.comment)
-                                        .font(.amiko(size: 13, weight: .regular))
-                                        .italic()
-                                        .foregroundColor(GlpiColors.dynamicText.opacity(0.7))
-                                        .lineSpacing(4)
-                                }
-                                .padding(.vertical, 5)
-                                .padding(.horizontal, 5)
-                            }
+                    HStack(spacing: 15) {
+                        Rectangle()
+                            .fill(GlpiColors.universalBlue)
+                            .frame(width: 3)
+                            .cornerRadius(1.5)
+                        
+                        Text(res.comment.isEmpty ? "Sem comentário." : res.comment)
+                            .font(.amiko(size: 13, weight: .regular))
+                            .italic()
+                            .foregroundColor(GlpiColors.dynamicText.opacity(0.7))
+                            .lineSpacing(4)
+                    }
+                    .padding(.vertical, 5)
+                    .padding(.horizontal, 5)
+                }
                 
                 Spacer()
+                
+                // Botão de Eliminar Reserva
+                Button(action: {
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                    showDeleteConfirmation = true
+                }) {
+                    HStack {
+                        Image(systemName: "trash.fill")
+                        Text("ELIMINAR RESERVA")
+                    }
+                    .font(.amiko(size: 13, weight: .black))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color.red)
+                    .cornerRadius(15)
+                }
             }
             .padding(25)
         }
-    }
-    
-    private func getSuggestions(for text: String) -> [String] {
-        return text.isEmpty ? mockUsers : mockUsers.filter { $0.localizedCaseInsensitiveContains(text) && $0 != text }
     }
     
     private func inputField(placeholder: String, text: Binding<String>, focus: Field) -> some View {
@@ -382,7 +578,6 @@ struct AssetReservationView: View {
     
     private func dayTimePickerRow(reservation: Binding<DayReservation>) -> some View {
         HStack(spacing: 15) {
-            // Data à esquerda
             VStack(alignment: .leading, spacing: 2) {
                 Text(formatDate(reservation.wrappedValue.date))
                     .font(.amiko(size: 14, weight: .black))
@@ -395,7 +590,6 @@ struct AssetReservationView: View {
             
             Spacer()
             
-            // Pickers de Hora
             HStack(spacing: 10) {
                 VStack(spacing: 2) {
                     Text("INÍCIO")
@@ -428,8 +622,6 @@ struct AssetReservationView: View {
         .glassStyle(cornerRadius: 18)
     }
     
-    // MARK: - Helpers
-    
     private func isDateSelected(_ date: Date) -> Bool {
         reservations.contains { calendar.isDate($0.date, inSameDayAs: date) }
     }
@@ -439,7 +631,6 @@ struct AssetReservationView: View {
             reservations.remove(at: index)
         } else {
             reservations.append(DayReservation(date: date))
-            // Ordenar por data
             reservations.sort { $0.date < $1.date }
         }
     }
@@ -455,7 +646,7 @@ struct AssetReservationView: View {
             Button(action: { dismiss() }) {
                 Image(systemName: GlpiMetrics.universalBackIcon)
                     .font(.system(size: GlpiMetrics.universalBackIconSize, weight: GlpiMetrics.universalBackIconWeight))
-                    .foregroundColor(GlpiColors.dynamicText)
+                    .foregroundColor(GlpiColors.universalBlue)
             }
             .padding(.leading, GlpiMetrics.padding + 5)
             

@@ -2,28 +2,27 @@
 //  TicketHistoryView.swift
 //  GLPI.IOS
 //
-//  Created by Antigravity on 22/04/2026.
+//  Created by Gonçalo Sousa on 22/04/2026.
 //
 
 import SwiftUI
+import Combine
 
 struct TicketHistoryView: View {
-    struct HistoryTicket: Identifiable {
-        let id = UUID()
-        let title: String
-        let desc: String
-        let status: String
-        let date: String
-        let isPriority: Bool
-    }
-    
     @Environment(\.dismiss) var dismiss
     @AppStorage("isLightMode_V2") var isLightMode = true
     @State var searchText = ""
     @State var selectedFilter: String? = nil
     @State var currentPage = 1
     @State var filterPageIndex = 0
-    @State var showFilterMenu = false
+    @State private var resolvedUserName = ""
+    
+    // Novas variáveis de estado para API real
+    @State private var tickets: [GLPITicket] = []
+    @State private var isLoading = true
+    @State private var expandedTicketId: String? = nil
+    @State private var currentY: CGFloat = 0
+    @State private var cancellables = Set<AnyCancellable>()
     
     private var pillWidth: CGFloat {
         let screenWidth = UIScreen.screenWidth
@@ -44,35 +43,87 @@ struct TicketHistoryView: View {
         Int(ceil(Double(filters.count) / 2.0))
     }
     
-    let fullHistory: [HistoryTicket] = [
-        HistoryTicket(title: "Impressora Piso 1", desc: "Papel encravado na HP-LaserJet", status: "Novo", date: "22 Abr 2026", isPriority: false),
-        HistoryTicket(title: "VPN Acesso", desc: "Utilizador RF bloqueado após 3 tentativas", status: "Atribuído", date: "21 Abr 2026", isPriority: true),
-        HistoryTicket(title: "Monitor 4K", desc: "Novo pedido de periférico para Design", status: "Novo", date: "20 Abr 2026", isPriority: false),
-        HistoryTicket(title: "LDAP Login", desc: "Erro 401 ao sincronizar utilizadores", status: "Resolvido", date: "15 Abr 2026", isPriority: false),
-        HistoryTicket(title: "Switch Core", desc: "Atualização de firmware agendada", status: "Atribuído", date: "12 Abr 2026", isPriority: true),
-        HistoryTicket(title: "Backup SVR04", desc: "Falha na verificação de integridade", status: "Novo", date: "10 Abr 2026", isPriority: true),
-        HistoryTicket(title: "Teclado Mecânico", desc: "Substituição por falha na tecla Enter", status: "Resolvido", date: "05 Abr 2026", isPriority: false),
-        HistoryTicket(title: "MacBook Pro 16", desc: "Instalação de software de segurança", status: "Resolvido", date: "01 Abr 2026", isPriority: false),
-        HistoryTicket(title: "Email Outlook", desc: "Configuração de conta em novo dispositivo", status: "Resolvido", date: "28 Mar 2026", isPriority: false),
-        HistoryTicket(title: "Wifi Guest", desc: "Criar credenciais para visita externa", status: "Resolvido", date: "25 Mar 2026", isPriority: false),
-        HistoryTicket(title: "Server R740", desc: "Substituição de disco em RAID 5", status: "Resolvido", date: "20 Mar 2026", isPriority: true),
-        HistoryTicket(title: "Licença Adobe", desc: "Renovação de subscrição anual", status: "Resolvido", date: "15 Mar 2026", isPriority: false)
-    ]
+    let allowedTypes = ["Computer", "Monitor", "Printer", "NetworkEquipment"]
+    let filters = ["Criados", "Requerente", "Atribuído", "Observador"]
     
-    let filters = ["Criados", "Em Progresso", "Prioritários", "Resolvidos"]
+    private var dateFormatter: DateFormatter {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "dd MMM yyyy"
+        formatter.locale = Locale(identifier: "pt_PT")
+        return formatter
+    }
     
-    var filteredTickets: [HistoryTicket] {
-        let filtered = fullHistory.filter { ticket in
-            let matchesSearch = searchText.isEmpty || ticket.title.lowercased().contains(searchText.lowercased()) || ticket.desc.lowercased().contains(searchText.lowercased())
+    private func mapStatusToString(_ status: TicketStatus) -> String {
+        switch status {
+        case .new: return "Novo"
+        case .assigned: return "Atribuído"
+        case .planned: return "Planeado"
+        case .waiting: return "Aguardando"
+        case .resolved: return "Finalizado"
+        case .deleted: return "Cancelado"
+        }
+    }
+    
+    // Retorna todos os tickets para o histórico geral do perfil (removido o filtro de tipos de equipamentos restritos)
+    var deviceTickets: [GLPITicket] {
+        tickets
+    }
+    
+    private func compareNames(_ name1: String, _ name2: String) -> Bool {
+        let n1 = name1.lowercased().folding(options: .diacriticInsensitive, locale: .current).trimmingCharacters(in: .whitespacesAndNewlines)
+        let n2 = name2.lowercased().folding(options: .diacriticInsensitive, locale: .current).trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        if n1.isEmpty || n2.isEmpty { return false }
+        if n1 == n2 { return true }
+        
+        if n1.contains(n2) || n2.contains(n1) { return true }
+        
+        let words1 = n1.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 1 }
+        let words2 = n2.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { $0.count > 1 }
+        
+        let ignoreList: Set<String> = ["de", "do", "da", "dos", "das", "e"]
+        let cleanWords1 = words1.filter { !ignoreList.contains($0) }
+        let cleanWords2 = words2.filter { !ignoreList.contains($0) }
+        
+        let set1 = Set(cleanWords1)
+        let set2 = Set(cleanWords2)
+        
+        let intersection = set1.intersection(set2)
+        
+        if intersection.count >= 2 {
+            return true
+        }
+        if (cleanWords1.count == 1 || cleanWords2.count == 1) && intersection.count >= 1 {
+            return true
+        }
+        
+        return false
+    }
+    
+    private func ticketMatchesFilter(_ ticket: GLPITicket, filter: String) -> Bool {
+        let userLower = resolvedUserName
+        if userLower.isEmpty { return true }
+        
+        switch filter {
+        case "Criados":
+            return compareNames(ticket.author, userLower)
+        case "Requerente":
+            return compareNames(ticket.requester, userLower)
+        case "Atribuído":
+            return compareNames(ticket.assignedTo, userLower) || ticket.assignedTo.lowercased().trimmingCharacters(in: .whitespacesAndNewlines) == "eu"
+        case "Observador":
+            return compareNames(ticket.observer, userLower)
+        default:
+            return true
+        }
+    }
+    
+    var filteredTickets: [GLPITicket] {
+        let filtered = deviceTickets.filter { ticket in
+            let matchesSearch = searchText.isEmpty || ticket.name.lowercased().contains(searchText.lowercased()) || ticket.description.lowercased().contains(searchText.lowercased())
             let matchesFilter: Bool
             if let selected = selectedFilter {
-                switch selected {
-                case "Criados": matchesFilter = ticket.status == "Novo"
-                case "Em Progresso": matchesFilter = ticket.status == "Atribuído"
-                case "Prioritários": matchesFilter = ticket.isPriority
-                case "Resolvidos": matchesFilter = ticket.status == "Resolvido"
-                default: matchesFilter = true
-                }
+                matchesFilter = ticketMatchesFilter(ticket, filter: selected)
             } else {
                 matchesFilter = true
             }
@@ -87,17 +138,11 @@ struct TicketHistoryView: View {
     }
     
     private var totalPages: Int {
-        let filteredCount = fullHistory.filter { ticket in
-            let matchesSearch = searchText.isEmpty || ticket.title.lowercased().contains(searchText.lowercased()) || ticket.desc.lowercased().contains(searchText.lowercased())
+        let filteredCount = deviceTickets.filter { ticket in
+            let matchesSearch = searchText.isEmpty || ticket.name.lowercased().contains(searchText.lowercased()) || ticket.description.lowercased().contains(searchText.lowercased())
             let matchesFilter: Bool
             if let selected = selectedFilter {
-                switch selected {
-                case "Criados": matchesFilter = ticket.status == "Novo"
-                case "Em Progresso": matchesFilter = ticket.status == "Atribuído"
-                case "Prioritários": matchesFilter = ticket.isPriority
-                case "Resolvidos": matchesFilter = ticket.status == "Resolvido"
-                default: matchesFilter = true
-                }
+                matchesFilter = ticketMatchesFilter(ticket, filter: selected)
             } else {
                 matchesFilter = true
             }
@@ -106,9 +151,44 @@ struct TicketHistoryView: View {
         return max(1, Int(ceil(Double(filteredCount) / 5.0)))
     }
     
+    func loadTickets() {
+        isLoading = true
+        let userId = PreferenceManager.shared.userId
+        let isOffline = PreferenceManager.shared.isOfflineMode
+        let nameToResolve = isOffline ? (PreferenceManager.shared.userName ?? "Utilizador") : String(userId)
+        
+        Task {
+            do {
+                // Primeiro resolve o nome do utilizador ativo
+                let resolved = await UserNameResolver.shared.resolve(
+                    id: nameToResolve,
+                    baseURL: PreferenceManager.shared.baseURL,
+                    sessionToken: PreferenceManager.shared.sessionToken,
+                    appToken: PreferenceManager.shared.appToken
+                )
+                
+                // Obter os últimos 150 tickets do utilizador
+                let response = try await GLPIClient.shared.searchTickets(userId: userId, range: "0-150")
+                let mapped = GLPIService.shared.mapToTickets(response.data ?? [])
+                
+                await MainActor.run {
+                    self.resolvedUserName = resolved
+                    self.tickets = mapped
+                    self.resolveNames()
+                    self.isLoading = false
+                }
+            } catch {
+                print("Erro ao carregar histórico de tickets: \(error)")
+                await MainActor.run {
+                    self.isLoading = false
+                }
+            }
+        }
+    }
+    
     var body: some View {
         ZStack {
-            GlpiColors.background.ignoresSafeArea()
+            (isLightMode ? Color.white : Color.black).ignoresSafeArea()
             
             VStack(spacing: 0) {
                 // 1. Cabeçalho Universal (Seta de Voltar)
@@ -127,21 +207,15 @@ struct TicketHistoryView: View {
                 
                 ScrollViewReader { listProxy in
                     VStack(spacing: 0) {
-                        // Barra de Pesquisa - Agora FIXA fora do ScrollView
+                        // Barra de Pesquisa - FIXA fora do ScrollView
                         GLPISearchHeader(
                             searchText: $searchText,
-                            placeholder: "Pesquisar no histórico...",
-                            rightIcon: "line.3.horizontal.decrease.circle",
-                            isSystemIcon: true,
-                            isRightIconSelected: selectedFilter != nil,
-                            rightIconAction: {
-                                withAnimation { showFilterMenu.toggle() }
-                            }
+                            placeholder: "Pesquisar no histórico..."
                         )
                         .padding(.top, 10)
                         .padding(.bottom, 10)
                         
-                        // Filtros Horizontais - Agora FIXOS fora do ScrollView
+                        // Filtros Horizontais - FIXOS fora do ScrollView
                         HStack(spacing: 12) {
                             HStack(spacing: 12) {
                                 ForEach(currentFilters, id: \.self) { filter in
@@ -202,12 +276,20 @@ struct TicketHistoryView: View {
                         
                         ScrollView(showsIndicators: false) {
                             VStack(alignment: .leading, spacing: 25) {
-                            
-                            // Lista de Histórico
-                            VStack(spacing: 15) {
                                 Color.clear.frame(height: 1).id("LIST_TOP")
                                 
-                                if filteredTickets.isEmpty {
+                                if isLoading {
+                                    VStack(spacing: 15) {
+                                        ProgressView()
+                                            .progressViewStyle(CircularProgressViewStyle(tint: GlpiColors.universalBlue))
+                                            .scaleEffect(1.2)
+                                        Text("A carregar histórico...")
+                                            .font(.amiko(size: 14))
+                                            .foregroundColor(GlpiColors.dynamicText.opacity(0.5))
+                                    }
+                                    .padding(.top, 100)
+                                    .frame(maxWidth: .infinity, alignment: .center)
+                                } else if filteredTickets.isEmpty {
                                     VStack(spacing: 15) {
                                         Image(systemName: "clock.badge.exclamationmark")
                                             .font(.system(size: 40))
@@ -217,147 +299,218 @@ struct TicketHistoryView: View {
                                             .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
                                     }
                                     .padding(.top, 100)
+                                    .frame(maxWidth: .infinity, alignment: .center)
                                 } else {
-                                    ForEach(filteredTickets) { ticket in
-                                        VStack(alignment: .leading, spacing: 10) {
-                                            HStack {
-                                                Text(ticket.date.uppercased())
-                                                    .font(.amiko(size: 10, weight: .bold))
-                                                    .foregroundColor(GlpiColors.dynamicText.opacity(0.4))
-                                                
-                                                if ticket.isPriority {
-                                                    Circle().fill(GlpiColors.universalBlue).frame(width: 6, height: 6)
-                                                }
-                                                Spacer()
-                                            }
+                                    VStack(spacing: 20) {
+                                        ForEach(filteredTickets) { ticket in
+                                            let isExpanded = expandedTicketId == ticket.id
                                             
-                                            ActivityRow(activity: (title: ticket.title, desc: ticket.desc, status: ticket.status))
+                                            TicketRowView(
+                                                ticket: ticket,
+                                                isSelected: false,
+                                                selectionColor: GlpiColors.universalBlue,
+                                                isExpanded: isExpanded,
+                                                isDeleteMode: false,
+                                                listCategory: "",
+                                                onLongPress: { _ in },
+                                                onSelect: {
+                                                    let nextId = isExpanded ? nil : ticket.id
+                                                    withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                                        expandedTicketId = nextId
+                                                    }
+                                                    if let newId = nextId, let index = tickets.firstIndex(where: { $0.id == newId }) {
+                                                        let t = tickets[index]
+                                                        if t.responses.isEmpty {
+                                                            fetchResponses(for: t)
+                                                        }
+                                                    }
+                                                },
+                                                currentY: $currentY
+                                            )
+                                            .padding(.horizontal, 16)
                                         }
-                                        .padding(18)
-                                        .background(GlpiColors.dynamicOffWhite)
-                                        .cornerRadius(22)
-                                        .overlay(
-                                            RoundedRectangle(cornerRadius: 22)
-                                                .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
-                                        )
-                                        .padding(.horizontal, 16)
                                     }
+                                    
+                                    // Paginação
+                                    HStack(spacing: 0) {
+                                        Button(action: {
+                                            if currentPage > 1 { withAnimation { currentPage -= 1 } }
+                                        }) {
+                                            Image(systemName: "chevron.left")
+                                                .font(.system(size: 16, weight: .bold))
+                                                .foregroundColor(GlpiColors.universalBlue)
+                                                .opacity(currentPage == 1 ? 0.2 : 1.0)
+                                                .frame(width: 50, height: 50)
+                                        }
+                                        .disabled(currentPage == 1)
+                                        
+                                        Spacer()
+                                        
+                                        Rectangle()
+                                            .fill(GlpiColors.dynamicText.opacity(0.05))
+                                            .frame(width: 1, height: 24)
+                                        
+                                        Spacer()
+                                        
+                                        Button(action: {
+                                            if currentPage < totalPages { withAnimation { currentPage += 1 } }
+                                        }) {
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 16, weight: .bold))
+                                                .foregroundColor(GlpiColors.universalBlue)
+                                                .opacity(currentPage == totalPages ? 0.2 : 1.0)
+                                                .frame(width: 50, height: 50)
+                                        }
+                                        .disabled(currentPage == totalPages)
+                                    }
+                                    .padding(.horizontal, 10)
+                                    .frame(maxWidth: .infinity)
+                                    .frame(height: 50)
+                                    .background(GlpiColors.dynamicOffWhite)
+                                    .cornerRadius(15)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 15)
+                                            .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
+                                    )
+                                    .padding(.horizontal, 16)
+                                    .padding(.top, 20)
                                 }
                                 
-                                // Paginação
-                                HStack(spacing: 0) {
-                                    Button(action: {
-                                        if currentPage > 1 { withAnimation { currentPage -= 1 } }
-                                    }) {
-                                        Image(systemName: "chevron.left")
-                                            .font(.system(size: 16, weight: .bold))
-                                            .foregroundColor(GlpiColors.universalBlue)
-                                            .opacity(currentPage == 1 ? 0.2 : 1.0)
-                                            .frame(width: 50, height: 50)
-                                    }
-                                    .disabled(currentPage == 1)
-                                    
-                                    Spacer()
-                                    
-                                    Rectangle()
-                                        .fill(GlpiColors.dynamicText.opacity(0.05))
-                                        .frame(width: 1, height: 24)
-                                    
-                                    Spacer()
-                                    
-                                    Button(action: {
-                                        if currentPage < totalPages { withAnimation { currentPage += 1 } }
-                                    }) {
-                                        Image(systemName: "chevron.right")
-                                            .font(.system(size: 16, weight: .bold))
-                                            .foregroundColor(GlpiColors.universalBlue)
-                                            .opacity(currentPage == totalPages ? 0.2 : 1.0)
-                                            .frame(width: 50, height: 50)
-                                    }
-                                    .disabled(currentPage == totalPages)
-                                }
-                                .padding(.horizontal, 10)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .background(GlpiColors.dynamicOffWhite)
-                                .cornerRadius(15)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 15)
-                                        .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
-                                )
-                                .padding(.horizontal, 16)
-                                .padding(.top, 20)
+                                Spacer(minLength: 120)
                             }
-                            
-                            Spacer(minLength: 120)
+                            .padding(.top, 10)
                         }
-                        .padding(.top, 10)
+                        .scrollDismissesKeyboard(.immediately)
+                        .refreshable {
+                            loadTickets()
+                        }
                     }
-                        .onChange(of: currentPage) { oldValue, newValue in
-                            withAnimation(.spring()) {
-                                listProxy.scrollTo("LIST_TOP", anchor: .top)
-                            }
+                    .background(isLightMode ? Color.white : Color.black)
+                    .scrollContentBackground(.hidden)
+                    .onChange(of: currentPage) { _, _ in
+                        withAnimation(.easeInOut(duration: 0.6)) {
+                            listProxy.scrollTo("LIST_TOP", anchor: .top)
                         }
                     }
                 }
-            }
-            .blur(radius: showFilterMenu ? 20 : 0)
-            
-            if showFilterMenu {
-                filterOverlayView
             }
         }
         .navigationBarHidden(true)
+        .onAppear {
+            loadTickets()
+        }
     }
     
-    private var filterOverlayView: some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture { withAnimation(.spring()) { showFilterMenu = false } }
+    private func fetchResponses(for ticket: GLPITicket) {
+        let service = GLPIService.shared
+        let resolver = UserNameResolver.shared
+        
+        let ticketId = ticket.id
+        
+        Publishers.Zip(
+            service.fetchTicketFollowups(ticketId: ticketId),
+            service.fetchTicketSolutions(ticketId: ticketId)
+        )
+        .receive(on: DispatchQueue.global(qos: .userInitiated))
+        .sink(receiveCompletion: { _ in }) { (followups, solutions) in
             
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(filters, id: \.self) { filter in
-                    filterMenuItem(title: filter, isSelected: selectedFilter == filter) {
-                        if selectedFilter == filter {
-                            selectedFilter = nil
-                        } else {
-                            selectedFilter = filter
-                        }
-                        withAnimation(.spring()) { showFilterMenu = false }
-                    }
+            var combined = followups.map { f -> TicketResponse in
+                var res = f
+                res.isSolution = false
+                return res
+            } + solutions.map { s -> TicketResponse in
+                var res = s
+                res.isSolution = true
+                return res
+            }
+            
+            combined.sort { $1.date < $0.date }
+            
+            Task {
+                var resolvedResponses: [TicketResponse] = []
+                for response in combined {
+                    let authorId = response.author
+                    let resolvedName = await resolver.resolve(id: authorId, baseURL: service.baseURL, sessionToken: service.sessionToken, appToken: service.appToken)
                     
-                    if filter != filters.last {
-                        Divider().background(GlpiColors.dynamicText.opacity(0.05)).padding(.horizontal, 16)
-                    }
+                    let prefix = response.isSolution ? "SOLUÇÃO" : "RESPOSTA"
+                    let updatedResponse = TicketResponse(
+                        author: "\(prefix) - \(resolvedName)",
+                        content: response.content,
+                        date: response.date,
+                        isInternal: response.isInternal,
+                        isSolution: response.isSolution
+                    )
+                    resolvedResponses.append(updatedResponse)
                 }
                 
-                Spacer().frame(height: 15)
+                await MainActor.run {
+                    if let idx = self.tickets.firstIndex(where: { $0.id == ticketId }) {
+                        self.tickets[idx].responses = resolvedResponses
+                    }
+                }
             }
-            .frame(maxWidth: .infinity)
-            .background(GlpiColors.dynamicOffWhite)
-            .cornerRadius(30)
-            .overlay(
-                RoundedRectangle(cornerRadius: 30)
-                    .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
-            )
-            .padding(.horizontal, 16)
-            .shadow(color: GlpiColors.universalBlue.opacity(0.2), radius: 40)
-            .transition(.scale(scale: 0.9).combined(with: .opacity))
         }
-        .zIndex(10)
+        .store(in: &cancellables)
     }
     
-    private func filterMenuItem(title: String, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack {
-                Text(title).font(.amiko(size: 14, weight: isSelected ? .bold : .regular))
-                Spacer()
-                if isSelected { Image(systemName: "checkmark").foregroundColor(GlpiColors.universalBlue) }
+    private func resolveNames() {
+        let service = GLPIService.shared
+        let resolver = UserNameResolver.shared
+        
+        for index in tickets.indices {
+            let ticketId = tickets[index].id
+            
+            let reqRaw = tickets[index].requester
+            Task {
+                let parts = reqRaw.components(separatedBy: " & ")
+                var resolvedParts: [String] = []
+                for part in parts {
+                    let name = await resolver.resolve(id: part, baseURL: service.baseURL, sessionToken: service.sessionToken, appToken: service.appToken)
+                    resolvedParts.append(name)
+                }
+                let finalName = resolvedParts.joined(separator: " & ")
+                await MainActor.run {
+                    if let currentIdx = self.tickets.firstIndex(where: { $0.id == ticketId }) {
+                        self.tickets[currentIdx].requester = finalName
+                    }
+                }
             }
-            .foregroundColor(GlpiColors.dynamicText).padding(16)
+            
+            let assignedRaw = tickets[index].assignedTo
+            Task {
+                let parts = assignedRaw.components(separatedBy: " & ")
+                var resolvedParts: [String] = []
+                for part in parts {
+                    let name = await resolver.resolve(id: part, baseURL: service.baseURL, sessionToken: service.sessionToken, appToken: service.appToken)
+                    resolvedParts.append(name)
+                }
+                let finalName = resolvedParts.joined(separator: " & ")
+                await MainActor.run {
+                    if let currentIdx = self.tickets.firstIndex(where: { $0.id == ticketId }) {
+                        self.tickets[currentIdx].assignedTo = finalName
+                    }
+                }
+            }
+            
+            let authorRaw = tickets[index].author
+            Task {
+                let parts = authorRaw.components(separatedBy: " & ")
+                var resolvedParts: [String] = []
+                for part in parts {
+                    let name = await resolver.resolve(id: part, baseURL: service.baseURL, sessionToken: service.sessionToken, appToken: service.appToken)
+                    resolvedParts.append(name)
+                }
+                let finalName = resolvedParts.joined(separator: " & ")
+                await MainActor.run {
+                    if let currentIdx = self.tickets.firstIndex(where: { $0.id == ticketId }) {
+                        self.tickets[currentIdx].author = finalName
+                    }
+                }
+            }
         }
     }
+    
+
 }
 
 #Preview {

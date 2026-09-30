@@ -3,6 +3,7 @@ import SwiftUI
 struct TicketQuickActionsOverlay: View {
     let ticket: GLPITicket
     let isDeleteMode: Bool
+    var listCategory: String = ""
     let onDismiss: () -> Void
     let onEdit: () -> Void
     let onReply: () -> Void
@@ -13,9 +14,10 @@ struct TicketQuickActionsOverlay: View {
     let onRecover: () -> Void
     @AppStorage("isLightMode_V2") var isLightMode = true
     
-    init(ticket: GLPITicket, isDeleteMode: Bool = false, onDismiss: @escaping () -> Void, onEdit: @escaping () -> Void = {}, onReply: @escaping () -> Void = {}, onDelete: @escaping () -> Void = {}, onResolve: @escaping () -> Void = {}, onSelect: @escaping () -> Void = {}, onPermanentDelete: @escaping () -> Void = {}, onRecover: @escaping () -> Void = {}) {
+    init(ticket: GLPITicket, isDeleteMode: Bool = false, listCategory: String = "", onDismiss: @escaping () -> Void, onEdit: @escaping () -> Void = {}, onReply: @escaping () -> Void = {}, onDelete: @escaping () -> Void = {}, onResolve: @escaping () -> Void = {}, onSelect: @escaping () -> Void = {}, onPermanentDelete: @escaping () -> Void = {}, onRecover: @escaping () -> Void = {}) {
         self.ticket = ticket
         self.isDeleteMode = isDeleteMode
+        self.listCategory = listCategory
         self.onDismiss = onDismiss
         self.onEdit = onEdit
         self.onReply = onReply
@@ -28,17 +30,16 @@ struct TicketQuickActionsOverlay: View {
     
     var body: some View {
         ZStack {
-            // Fundo com Blur
-            Rectangle()
-                .fill(Color.black.opacity(0.4))
-                .background(.ultraThinMaterial)
+            // Fundo com Dimming (Igual ao dos Filtros)
+            Color.black.opacity(isLightMode ? 0.25 : 0.5)
                 .ignoresSafeArea()
                 .onTapGesture { onDismiss() }
             
             VStack(spacing: 20) {
-                // 1. RÉPLICA DO TICKET (Igual à lista)
-                TicketRowViewPreview(ticket: ticket)
+                // 1. RÉPLICA DO TICKET (Usa o componente real para garantir 100% de paridade)
+                TicketRowView(ticket: ticket, isSelected: false, listCategory: listCategory, currentY: .constant(0))
                     .padding(.horizontal, 16)
+                    .allowsHitTesting(false)
                 
                 // 2. QUADRADO DE FUNÇÕES
                 VStack(spacing: 0) {
@@ -54,20 +55,20 @@ struct TicketQuickActionsOverlay: View {
                         QuickActionItem(title: "EDITAR", icon: "pencil", color: GlpiColors.dynamicText.opacity(0.8), action: onEdit)
                         Divider().background(GlpiColors.dynamicText.opacity(0.05)).padding(.horizontal, 20)
                         
-                        QuickActionItem(title: "RESOLVER", icon: "checkmark.circle.fill", color: GlpiColors.universalBlue, action: onResolve)
-                        Divider().background(GlpiColors.dynamicText.opacity(0.05)).padding(.horizontal, 20)
-                        
                         QuickActionItem(title: "ELIMINAR", icon: "xmark.circle.fill", color: .red.opacity(0.8), action: onDelete)
                     }
                 }
-                .background(GlpiColors.dynamicOffWhite)
-                .cornerRadius(30)
+                .clipShape(RoundedRectangle(cornerRadius: 30))
+                .background(
+                    RoundedRectangle(cornerRadius: 30)
+                        .fill(GlpiColors.dynamicOffWhite)
+                        .shadow(color: isLightMode ? Color.black.opacity(0.06) : Color.clear, radius: 10, x: 0, y: 5)
+                )
                 .overlay(
                     RoundedRectangle(cornerRadius: 30)
                         .strokeBorder(isLightMode ? Color.black.opacity(0.08) : Color.white.opacity(0.15), lineWidth: GlpiMetrics.inactiveBorderWidth)
                 )
                 .padding(.horizontal, 16)
-                .shadow(color: .black.opacity(0.1), radius: 30, x: 0, y: 20)
             }
             .padding(.bottom, 50)
             .transition(.scale(scale: 0.95).combined(with: .opacity))
