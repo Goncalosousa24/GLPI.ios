@@ -20,7 +20,7 @@ The application is divided into several powerful modules, offering a comprehensi
 
 ## 📸 Screenshots
 
-| Página Principal | Inventário | Agenda | Perfil |
+| Dashboard | Inventory | Agenda | Profile |
 |:---:|:---:|:---:|:---:|
 | <img width="220" alt="1" src="https://github.com/user-attachments/assets/5fe66ae8-b70b-47bf-9e5e-f466b09782b8" /> | <img width="220" alt="2" src="https://github.com/user-attachments/assets/cd0cef24-437e-4f2e-96ba-782abd5ac8ef" /> | <img width="220" alt="3" src="https://github.com/user-attachments/assets/3caae156-25bc-4d51-9952-79e54042f2ec" /> | <img width="220" alt="4" src="https://github.com/user-attachments/assets/8c747d67-fc6d-4c7e-8c23-de4a29d75845" /> |
 
@@ -42,5 +42,18 @@ This project was built with modern Apple iOS development standards:
 ## 🚀 How to Run the Project
 
 1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/Goncalosousa24/GLPI.ios.git
+   `git clone https://github.com/Goncalosousa24/GLPI.ios.git`
+
+2. **GLPI API Configuration:**
+   * Due to security reasons, the real production `App-Token` and Server URLs have been redacted from this public repository.
+   * To connect to your real server, open `PreferenceManager.swift` and replace the placeholder strings with your actual GLPI App-Token and Session-Token. 
+   * Navigate to `LoginView.swift` to update the Base URL.
+
+3. **Build & Run:**
+   * Open the `GLPI.IOS.xcodeproj` file in **Xcode**.
+   * Select a Simulator (e.g., iPhone 15 Pro) and hit `Cmd + R` to build and run the project.
+
+## 👨💻 Author
+
+**Gonçalo Sousa**
+* GitHub: [@Goncalosousa24](https://github.com/Goncalosousa24)
