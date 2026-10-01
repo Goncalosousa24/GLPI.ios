@@ -53,7 +53,7 @@ This project was built with modern Apple iOS development standards:
    * Open the `GLPI.IOS.xcodeproj` file in **Xcode**.
    * Select a Simulator (e.g., iPhone 15 Pro) and hit `Cmd + R` to build and run the project.
 
-## 👨💻 Author
+## 💻 Author
 
 **Gonçalo Sousa**
 * GitHub: [@Goncalosousa24](https://github.com/Goncalosousa24)
