@@ -22,7 +22,7 @@ The application is divided into several powerful modules, offering a comprehensi
 
 | Página Principal | Inventário | Agenda | Perfil |
 |:---:|:---:|:---:|:---:|
-| <img width="220" alt="1" src="https://github.com/user-attachments/assets/27becbc3-ff15-4510-a7b4-2741e64e2a1c" /> | <img width="220" alt="2" src="https://github.com/user-attachments/assets/3caae156-25bc-4d51-9952-79e54042f2ec" /> | <img width="220" alt="3" src="https://github.com/user-attachments/assets/cd0cef24-437e-4f2e-96ba-782abd5ac8ef" /> | <img width="220" alt="4" src="https://github.com/user-attachments/assets/5fe66ae8-b70b-47bf-9e5e-f466b09782b8" /> |
+| <img width="220" alt="4" src="https://github.com/user-attachments/assets/27becbc3-ff15-4510-a7b4-2741e64e2a1c" /> | <img width="220" alt="3" src="https://github.com/user-attachments/assets/3caae156-25bc-4d51-9952-79e54042f2ec" /> | <img width="220" alt="2" src="https://github.com/user-attachments/assets/cd0cef24-437e-4f2e-96ba-782abd5ac8ef" /> | <img width="220" alt="1" src="https://github.com/user-attachments/assets/5fe66ae8-b70b-47bf-9e5e-f466b09782b8" /> |
 
 > ℹ️ **Note:** The screenshots above were captured using the application in **Offline Mode**. All visible data (names, tickets, hardware) is dynamically generated mock data designed purely for demonstration and portfolio purposes without requiring a real GLPI server connection.
 
